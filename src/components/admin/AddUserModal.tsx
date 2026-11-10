@@ -158,3 +158,4 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
     </div>
   );
 };
+

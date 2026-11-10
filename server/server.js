@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { db } from './db.js';
 
@@ -330,8 +331,13 @@ app.post('/api/admin/db-settings', adminOnlyMiddleware, async (req, res) => {
 const distPath = path.join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+app.use((req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.json({ message: '75 HARD API running', port: PORT });
+  }
 });
 
 // Start server
@@ -342,3 +348,4 @@ app.listen(PORT, () => {
   console.log(`🛡️  Admin PIN: ${db.getConfig().adminPin}`);
   console.log(`===============================================`);
 });
+

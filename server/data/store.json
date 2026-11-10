@@ -1,0 +1,80 @@
+{
+  "config": {
+    "startDate": "2026-11-11",
+    "durationDays": 75,
+    "endDate": "2027-01-24",
+    "depositAmount": 2000,
+    "currencySymbol": "₹",
+    "wakeUpTarget": "06:00",
+    "wakeUpTravelTarget": "08:00",
+    "travelThresholdHours": 4,
+    "readingMinPages": 5,
+    "readingMaxPages": 10,
+    "stepsTarget": 10000,
+    "runTargetKm": 3,
+    "floorsTarget": 20,
+    "travelSubstituteSteps": 15000,
+    "travelSubstituteRunKm": 5,
+    "familyTargetMinutes": 10,
+    "reminderTime": "21:00",
+    "reminderEnabled": true,
+    "strictResetOnMiss": true,
+    "lockPastDays": true,
+    "adminPin": "7575"
+  },
+  "users": [
+    {
+      "id": "user_1",
+      "username": "challenger1",
+      "name": "Challenger 1",
+      "pin": "1111",
+      "avatar": "🦁",
+      "color": "from-rose-600 to-rose-700",
+      "role": "challenger",
+      "depositAmount": 2000,
+      "createdAt": "2026-11-10T19:17:27.584Z"
+    },
+    {
+      "id": "user_2",
+      "username": "challenger2",
+      "name": "Challenger 2",
+      "pin": "2222",
+      "avatar": "🐺",
+      "color": "from-blue-600 to-indigo-700",
+      "role": "challenger",
+      "depositAmount": 2000,
+      "createdAt": "2026-11-10T19:17:27.584Z"
+    },
+    {
+      "id": "user_3",
+      "username": "challenger3",
+      "name": "Challenger 3",
+      "pin": "3333",
+      "avatar": "🦅",
+      "color": "from-amber-500 to-orange-600",
+      "role": "challenger",
+      "depositAmount": 2000,
+      "createdAt": "2026-11-10T19:17:27.584Z"
+    },
+    {
+      "id": "admin",
+      "username": "admin",
+      "name": "Referee / Admin",
+      "pin": "7575",
+      "avatar": "⚖️",
+      "color": "from-purple-600 to-indigo-800",
+      "role": "admin",
+      "depositAmount": 0,
+      "createdAt": "2026-11-10T19:17:27.584Z"
+    }
+  ],
+  "logs": {
+    "user_1": {},
+    "user_2": {},
+    "user_3": {}
+  },
+  "dbSettings": {
+    "supabaseUrl": "",
+    "supabaseAnonKey": ""
+  }
+}
