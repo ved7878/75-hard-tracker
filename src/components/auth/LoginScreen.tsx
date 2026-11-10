@@ -17,14 +17,12 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { supabaseService } from '../../services/supabaseService';
 
 export const LoginScreen: React.FC = () => {
-  const { users, loginChallenger, loginAdmin } = useChallenge();
+  const { loginChallenger, loginAdmin } = useChallenge();
   const [isAdminTab, setIsAdminTab] = useState(false);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   // Challenger form state
-  const challengers = users.filter(u => u.role !== 'admin');
-  const [selectedUsername, setSelectedUsername] = useState(challengers[0]?.username || 'vedant');
-  const [customUsername, setCustomUsername] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [adminPasswordOrPin, setAdminPasswordOrPin] = useState('');
@@ -37,14 +35,22 @@ export const LoginScreen: React.FC = () => {
   const handleChallengerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    setLoading(true);
 
-    const userToLogin = customUsername.trim() || selectedUsername;
-    const res = await loginChallenger(userToLogin, password);
+    if (!username.trim()) {
+      setErrorMsg('Please enter your username or email.');
+      return;
+    }
+    if (!password) {
+      setErrorMsg('Please enter your password or PIN.');
+      return;
+    }
+
+    setLoading(true);
+    const res = await loginChallenger(username.trim(), password);
     setLoading(false);
 
     if (!res.success) {
-      setErrorMsg(res.error || 'Invalid username or password. Check credentials or use Forgot Password.');
+      setErrorMsg(res.error || 'Invalid credentials. Check your username and password.');
     }
   };
 
@@ -134,52 +140,17 @@ export const LoginScreen: React.FC = () => {
             {!isAdminTab ? (
               /* CHALLENGER LOGIN FORM */
               <form onSubmit={handleChallengerSubmit} className="space-y-4">
-                {/* 1-Tap Challenger Selection */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-slate-300 font-bold block">Select Challenger:</label>
-                    <span className="text-[10px] text-slate-500">Quick Profile Select</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {challengers.map(c => {
-                      const isSelected = selectedUsername === c.username;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedUsername(c.username || '');
-                            setCustomUsername('');
-                            setPassword(c.password || c.pin || '');
-                          }}
-                          className={`p-2 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                            isSelected
-                              ? 'bg-rose-950/40 border-rose-500 text-white shadow-sm ring-1 ring-rose-500/30'
-                              : 'bg-black/30 border-white/[0.06] text-slate-400 hover:border-white/20'
-                          }`}
-                        >
-                          <span className="text-xl mb-0.5">{c.avatar}</span>
-                          <span className="font-bold text-[10px] truncate w-full text-center">
-                            {c.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Custom Username or Email */}
+                {/* Username or Email Input */}
                 <div className="space-y-1">
                   <label className="text-slate-300 font-bold block text-[11px]">User ID / Username:</label>
                   <input
                     type="text"
-                    value={customUsername || selectedUsername}
-                    onChange={e => {
-                      setCustomUsername(e.target.value);
-                      setSelectedUsername(e.target.value);
-                    }}
-                    placeholder="Enter username (e.g. vedant)"
-                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-rose-500"
+                    required
+                    autoFocus
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    placeholder="Enter your username (e.g. vedant)"
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                   />
                 </div>
 
@@ -202,7 +173,7 @@ export const LoginScreen: React.FC = () => {
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       placeholder="Enter password or 4-digit PIN"
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-xs font-mono text-white focus:outline-none focus:border-rose-500"
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                     />
                     <button
                       type="button"
@@ -305,9 +276,9 @@ export const LoginScreen: React.FC = () => {
       <ForgotPasswordModal
         isOpen={isForgotPasswordOpen}
         onClose={() => setIsForgotPasswordOpen(false)}
-        defaultUsername={customUsername || selectedUsername}
+        defaultUsername={username}
         onSuccess={un => {
-          setSelectedUsername(un);
+          setUsername(un);
           setPassword('');
         }}
       />

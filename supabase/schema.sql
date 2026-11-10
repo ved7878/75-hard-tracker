@@ -184,3 +184,4 @@ DROP TRIGGER IF EXISTS set_logs_updated_at ON public.daily_logs;
 CREATE TRIGGER set_logs_updated_at
 BEFORE UPDATE ON public.daily_logs
 FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+
