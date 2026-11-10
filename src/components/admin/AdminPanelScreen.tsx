@@ -3,17 +3,19 @@ import {
   ShieldAlert,
   CheckCircle2,
   XCircle,
-  FileText,
   Calendar,
   Sliders,
   DollarSign,
   AlertTriangle,
-  RotateCcw,
-  Sparkles,
   Lock,
   Unlock,
   KeyRound,
   ExternalLink,
+  UserPlus,
+  Trash2,
+  Database,
+  Save,
+  Clock,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
@@ -23,7 +25,8 @@ import {
   validateDayTasks,
   getDayNumber,
 } from '../../services/rulesEngine';
-import { TaskState, ActivityType } from '../../types';
+import { TaskState } from '../../types';
+import { AddUserModal } from './AddUserModal';
 
 export const AdminPanelScreen: React.FC = () => {
   const {
@@ -33,30 +36,41 @@ export const AdminPanelScreen: React.FC = () => {
     approveException,
     rejectException,
     adminUpdateLog,
+    adminDeleteUser,
     config,
     updateConfig,
     adminOverrideMode,
     setAdminOverrideMode,
     setCurrentUserId,
     setCurrentDate,
+    dbSettings,
+    updateDbSettings,
   } = useChallenge();
 
-  // Override editor state
   const challengers = users.filter(u => u.role !== 'admin');
   const [selectedUserId, setSelectedUserId] = useState<string>(challengers[0]?.id || 'user_1');
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
-  const [adminPinInput, setAdminPinInput] = useState<string>('');
-  const [pinChangeMsg, setPinChangeMsg] = useState<string>('');
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [previewProofUrl, setPreviewProofUrl] = useState<string | null>(null);
 
-  // Get currently selected log for override
+  // System & Task Config Form State
+  const [configForm, setConfigForm] = useState({ ...config });
+  const [configSaveMsg, setConfigSaveMsg] = useState('');
+
+  // DB Settings State
+  const [supabaseUrl, setSupabaseUrl] = useState(dbSettings?.supabaseUrl || '');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [dbMsg, setDbMsg] = useState<{ success?: boolean; text?: string } | null>(null);
+  const [testingDb, setTestingDb] = useState(false);
+
+  // Target log for Time-Machine override
   const targetUserLogs = allUsersLogs[selectedUserId] || {};
   const currentTargetLog = targetUserLogs[selectedDate] || createDefaultLog(selectedDate, config, selectedUserId);
   const targetUser = challengers.find(c => c.id === selectedUserId) || challengers[0];
-  const { items, allCompleted, completedCount, totalCount } = validateDayTasks(currentTargetLog, config);
+  const { items, completedCount, totalCount } = validateDayTasks(currentTargetLog, config);
   const targetDayNum = getDayNumber(selectedDate, config.startDate);
 
-  // Toggle habit in admin mode
+  // Admin Habit Direct Toggle
   const handleAdminToggleTask = (taskId: keyof TaskState) => {
     adminUpdateLog(selectedUserId, selectedDate, prev => {
       const tasks = { ...prev.tasks };
@@ -91,31 +105,34 @@ export const AdminPanelScreen: React.FC = () => {
     });
   };
 
-  // Change Admin PIN
-  const handleChangePin = (e: React.FormEvent) => {
+  const handleSaveSystemConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPinInput.trim().length < 4) {
-      setPinChangeMsg('PIN must be at least 4 digits.');
-      return;
-    }
-    updateConfig({ adminPin: adminPinInput.trim() });
-    setPinChangeMsg('Admin PIN updated successfully!');
-    setAdminPinInput('');
+    setConfigSaveMsg('Saving system rules to backend...');
+    await updateConfig(configForm);
+    setConfigSaveMsg('✓ System & Task rules updated successfully!');
+    setTimeout(() => setConfigSaveMsg(''), 3000);
+  };
+
+  const handleSaveDbSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTestingDb(true);
+    setDbMsg(null);
+    const res = await updateDbSettings({ supabaseUrl, supabaseAnonKey: supabaseKey });
+    setTestingDb(false);
+    setDbMsg({ success: res.success, text: res.message });
   };
 
   return (
     <div className="space-y-5 pb-8 text-xs">
       {/* Page Title & Status */}
       <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center space-x-2">
-            <span className="p-1.5 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-md">
-              <ShieldAlert className="w-5 h-5" />
-            </span>
-            <div>
-              <h2 className="text-base font-extrabold text-white">Referee & Admin Panel</h2>
-              <p className="text-[11px] text-slate-400">Master controls for exceptions, audits, and time overrides</p>
-            </div>
+        <div className="flex items-center space-x-2">
+          <span className="p-2 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-md">
+            <ShieldAlert className="w-5 h-5" />
+          </span>
+          <div>
+            <h2 className="text-base font-extrabold text-white">Referee & Admin Panel</h2>
+            <p className="text-[11px] text-slate-400">Exclusive master controls for 75 HARD system & users</p>
           </div>
         </div>
 
@@ -126,17 +143,227 @@ export const AdminPanelScreen: React.FC = () => {
           </span>
           <button
             onClick={() => setAdminOverrideMode(!adminOverrideMode)}
-            className={`p-1 rounded-lg transition-all ${
+            className={`p-1.5 rounded-lg transition-all ${
               adminOverrideMode ? 'bg-amber-500 text-black' : 'bg-white/10 text-slate-400'
             }`}
-            title="Toggle time machine override mode"
+            title="Toggle time-machine override mode"
           >
             {adminOverrideMode ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
           </button>
         </div>
       </div>
 
-      {/* 1. PENDING EXCEPTION REQUESTS QUEUE */}
+      {/* 1. USER MANAGEMENT: ADD & MANAGE CHALLENGERS */}
+      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+              Challenger Accounts ({challengers.length})
+            </h3>
+          </div>
+          <button
+            onClick={() => setIsAddUserOpen(true)}
+            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center space-x-1 shadow-glow-red transition-all active:scale-95"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Add Challenger</span>
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {challengers.map(c => (
+            <div
+              key={c.id}
+              className="p-3 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between"
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-2xl">{c.avatar}</span>
+                <div>
+                  <h4 className="font-bold text-white text-xs">{c.name}</h4>
+                  <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                    <span>Username: <strong className="text-slate-200">{c.username}</strong></span>
+                    <span>•</span>
+                    <span>PIN: <strong className="text-amber-300">{c.pin || '1234'}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                  {config.currencySymbol}{c.depositAmount || config.depositAmount} Pledge
+                </span>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to delete ${c.name}? Their 75 Hard logs will be wiped.`)) {
+                      adminDeleteUser(c.id);
+                    }
+                  }}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-all"
+                  title="Remove Challenger"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. SYSTEM & TASK MODIFICATION (ADMIN PANEL ONLY!) */}
+      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Sliders className="w-4 h-4 text-purple-400" />
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+              System & Task Modification (Admin Only)
+            </h3>
+          </div>
+          <span className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded font-bold">
+            Master Rules
+          </span>
+        </div>
+
+        <form onSubmit={handleSaveSystemConfig} className="space-y-3 pt-1 border-t border-white/[0.06]">
+          {/* Challenge Schedule */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label className="text-slate-400 block mb-1">Challenge Start Date:</label>
+              <input
+                type="date"
+                value={configForm.startDate}
+                onChange={e => setConfigForm({ ...configForm, startDate: e.target.value })}
+                className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1">Challenge End Date:</label>
+              <input
+                type="date"
+                value={configForm.endDate}
+                onChange={e => setConfigForm({ ...configForm, endDate: e.target.value })}
+                className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1">Duration (Days):</label>
+              <input
+                type="number"
+                value={configForm.durationDays}
+                onChange={e => setConfigForm({ ...configForm, durationDays: Number(e.target.value) })}
+                className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1">Deposit Amount (₹):</label>
+              <input
+                type="number"
+                value={configForm.depositAmount}
+                onChange={e => setConfigForm({ ...configForm, depositAmount: Number(e.target.value) })}
+                className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+              />
+            </div>
+          </div>
+
+          {/* Habit Targets */}
+          <div className="pt-2 border-t border-white/[0.06]">
+            <h4 className="font-bold text-slate-300 mb-2">Habit Execution Targets:</h4>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-slate-400 block mb-1">Standard Wake Up:</label>
+                <input
+                  type="time"
+                  value={configForm.wakeUpTarget}
+                  onChange={e => setConfigForm({ ...configForm, wakeUpTarget: e.target.value })}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Travel Wake Up (&gt;4h):</label>
+                <input
+                  type="time"
+                  value={configForm.wakeUpTravelTarget}
+                  onChange={e => setConfigForm({ ...configForm, wakeUpTravelTarget: e.target.value })}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Reading Pages (Min):</label>
+                <input
+                  type="number"
+                  value={configForm.readingMinPages}
+                  onChange={e => setConfigForm({ ...configForm, readingMinPages: Number(e.target.value) })}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Steps Target:</label>
+                <input
+                  type="number"
+                  value={configForm.stepsTarget}
+                  onChange={e => setConfigForm({ ...configForm, stepsTarget: Number(e.target.value) })}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Travel Sub. Steps:</label>
+                <input
+                  type="number"
+                  value={configForm.travelSubstituteSteps}
+                  onChange={e => setConfigForm({ ...configForm, travelSubstituteSteps: Number(e.target.value) })}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Travel Sub. Run (KM):</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={configForm.travelSubstituteRunKm}
+                  onChange={e => setConfigForm({ ...configForm, travelSubstituteRunKm: Number(e.target.value) })}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Strict Rules */}
+          <div className="pt-2 border-t border-white/[0.06] space-y-2">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-black/40">
+              <span className="text-slate-300">Lock Checklist to TODAY Only (Zero Backfilling):</span>
+              <input
+                type="checkbox"
+                checked={configForm.lockPastDays}
+                onChange={e => setConfigForm({ ...configForm, lockPastDays: e.target.checked })}
+                className="w-4 h-4 accent-amber-500"
+              />
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-black/40">
+              <span className="text-slate-300">Strict Streak Reset to 0 on Miss:</span>
+              <input
+                type="checkbox"
+                checked={configForm.strictResetOnMiss}
+                onChange={e => setConfigForm({ ...configForm, strictResetOnMiss: e.target.checked })}
+                className="w-4 h-4 accent-rose-500"
+              />
+            </div>
+          </div>
+
+          {configSaveMsg && (
+            <p className="text-xs text-emerald-400 font-bold">{configSaveMsg}</p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-md transition-all active:scale-95 flex items-center justify-center space-x-1.5"
+          >
+            <Save className="w-4 h-4" />
+            <span>Save System & Task Modifications</span>
+          </button>
+        </form>
+      </div>
+
+      {/* 3. PENDING EXCEPTION REQUESTS QUEUE */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -152,7 +379,7 @@ export const AdminPanelScreen: React.FC = () => {
           <div className="p-4 rounded-xl bg-black/30 border border-white/[0.05] text-center text-slate-400 space-y-1">
             <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
             <p className="font-semibold text-white">No Pending Claims</p>
-            <p className="text-[11px] text-slate-500">All 3 challengers are executing without sickness claims.</p>
+            <p className="text-[11px] text-slate-500">All challengers are executing without sickness claims.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -182,10 +409,9 @@ export const AdminPanelScreen: React.FC = () => {
                   </p>
                 )}
 
-                {/* Medical Proof Document Preview */}
                 {req.medicalProofUrl && (
                   <div className="space-y-1">
-                    <span className="font-bold text-slate-300 text-[10px]">Medical Document:</span>
+                    <span className="font-bold text-slate-300 text-[10px]">Medical Proof Image:</span>
                     <div
                       onClick={() => setPreviewProofUrl(req.medicalProofUrl || null)}
                       className="cursor-pointer max-h-32 rounded-lg overflow-hidden border border-white/10 relative group"
@@ -205,7 +431,6 @@ export const AdminPanelScreen: React.FC = () => {
                   </div>
                 )}
 
-                {/* Approve / Reject Actions */}
                 <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-500/20">
                   <button
                     onClick={() => approveException(req.userId, req.date)}
@@ -229,7 +454,7 @@ export const AdminPanelScreen: React.FC = () => {
         )}
       </div>
 
-      {/* 2. TIME-MACHINE / EDIT PAST AND FUTURE DAYS */}
+      {/* 4. TIME MACHINE: EDIT PAST AND FUTURE DAYS */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -247,7 +472,6 @@ export const AdminPanelScreen: React.FC = () => {
           As Admin, you can select any challenger and modify any date (past mistakes, retroactive reviews, or future plans).
         </p>
 
-        {/* Challenger & Date Selectors */}
         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/[0.06]">
           <div>
             <label className="text-slate-400 block mb-1 font-semibold">Select Challenger:</label>
@@ -275,7 +499,6 @@ export const AdminPanelScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Day Preview & Tasks Direct Editor */}
         <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] space-y-3">
           <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
             <div>
@@ -354,87 +577,67 @@ export const AdminPanelScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. SQUAD DEPOSIT & PENALTY LEDGER */}
+      {/* 5. BACKEND DATABASE CONFIGURATION (SUPABASE) */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <Database className="w-4 h-4 text-emerald-400" />
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Deposit & Penalty Ledger
+              Backend Database Settings
             </h3>
           </div>
-          <span className="font-extrabold text-emerald-400">
-            Total Pool: {config.currencySymbol}{(config.depositAmount * challengers.length).toLocaleString()}
+          <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+            dbSettings?.isConnected ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+          }`}>
+            {dbSettings?.isConnected ? 'Supabase Connected' : 'Local JSON Active'}
           </span>
         </div>
 
-        <div className="space-y-2 pt-1 border-t border-white/[0.06]">
-          {challengers.map(c => {
-            const uLogs = allUsersLogs[c.id] || {};
-            const misses = Object.values(uLogs).filter(
-              l => l.status === 'incomplete' && l.date < formatDate(new Date())
-            ).length;
+        <p className="text-slate-400 text-[11px]">
+          Database connections run securely on the Node.js backend. Configure your Supabase credentials here without client exposure.
+        </p>
 
-            return (
-              <div
-                key={c.id}
-                className="p-3 rounded-xl bg-black/30 border border-white/[0.05] flex items-center justify-between"
-              >
-                <div className="flex items-center space-x-2.5">
-                  <span className="text-xl">{c.avatar}</span>
-                  <div>
-                    <h4 className="font-bold text-white text-xs">{c.name}</h4>
-                    <p className="text-[10px] text-slate-400">
-                      Pledge: {config.currencySymbol}{config.depositAmount} • {misses} missed days
-                    </p>
-                  </div>
-                </div>
+        <form onSubmit={handleSaveDbSettings} className="space-y-2.5 pt-1 border-t border-white/[0.06]">
+          <div>
+            <label className="text-slate-400 block mb-1">Supabase Project URL:</label>
+            <input
+              type="text"
+              placeholder="https://xyzcompany.supabase.co"
+              value={supabaseUrl}
+              onChange={e => setSupabaseUrl(e.target.value)}
+              className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white font-mono text-[11px]"
+            />
+          </div>
 
-                <span
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                    misses > 0
-                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                  }`}
-                >
-                  {misses > 0 ? 'FORFEITED' : 'PROTECTED'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 4. ADMIN SECURITY & PIN */}
-      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
-        <div className="flex items-center space-x-2">
-          <KeyRound className="w-4 h-4 text-purple-400" />
-          <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-            Admin PIN Security
-          </h3>
-        </div>
-
-        <form onSubmit={handleChangePin} className="space-y-2 pt-1 border-t border-white/[0.06]">
-          <div className="flex items-center space-x-2">
+          <div>
+            <label className="text-slate-400 block mb-1">Supabase Anon Key:</label>
             <input
               type="password"
-              placeholder="Enter new 4+ digit Admin PIN"
-              value={adminPinInput}
-              onChange={e => setAdminPinInput(e.target.value)}
-              className="flex-1 bg-black/50 border border-white/10 rounded-lg p-2 text-white font-mono text-xs focus:outline-none focus:border-purple-500"
+              placeholder={dbSettings?.hasKey ? '••••••••••••••••••••••••' : 'Enter Supabase Key'}
+              value={supabaseKey}
+              onChange={e => setSupabaseKey(e.target.value)}
+              className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white font-mono text-[11px]"
             />
-            <button
-              type="submit"
-              className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs active:scale-95 transition-all"
-            >
-              Update PIN
-            </button>
           </div>
-          {pinChangeMsg && (
-            <p className="text-[11px] text-emerald-400 font-semibold">{pinChangeMsg}</p>
+
+          {dbMsg && (
+            <p className={`text-xs font-bold ${dbMsg.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {dbMsg.text}
+            </p>
           )}
+
+          <button
+            type="submit"
+            disabled={testingDb}
+            className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all active:scale-95"
+          >
+            {testingDb ? 'Testing Connection...' : 'Save & Link Backend Database'}
+          </button>
         </form>
       </div>
+
+      {/* Add User Modal */}
+      <AddUserModal isOpen={isAddUserOpen} onClose={() => setIsAddUserOpen(false)} />
 
       {/* Medical Proof High-Res Modal */}
       {previewProofUrl && (

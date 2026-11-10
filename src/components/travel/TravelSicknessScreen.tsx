@@ -95,8 +95,8 @@ export const TravelSicknessScreen: React.FC = () => {
       {/* Page Title */}
       <div>
         <div className="flex items-center space-x-2">
-          <span className="text-sm">{currentUser.avatar}</span>
-          <h2 className="text-base font-extrabold text-white">Travel & Sickness ({currentUser.name})</h2>
+          <span className="text-sm">{currentUser?.avatar || '🔥'}</span>
+          <h2 className="text-base font-extrabold text-white">Travel & Sickness ({currentUser?.name || 'Challenger'})</h2>
         </div>
         <p className="text-xs text-slate-400 mt-0.5">
           Dynamic adjustments & official referee exception requests.
@@ -433,13 +433,13 @@ export const TravelSicknessScreen: React.FC = () => {
                 </span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => approveException(currentUser.id, currentDate)}
+                    onClick={() => currentUser && approveException(currentUser.id, currentDate)}
                     className="py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
                   >
                     Direct Approve ✓
                   </button>
                   <button
-                    onClick={() => rejectException(currentUser.id, currentDate)}
+                    onClick={() => currentUser && rejectException(currentUser.id, currentDate)}
                     className="py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
                   >
                     Direct Reject ✕

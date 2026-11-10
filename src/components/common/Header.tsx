@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Flame,
   ShieldCheck,
@@ -8,12 +8,11 @@ import {
   ChevronRight,
   Lock,
   ShieldAlert,
-  KeyRound,
+  LogOut,
   Unlock,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { formatDate, parseDate, getDayNumber } from '../../services/rulesEngine';
-import { LoginModal } from '../auth/LoginModal';
 
 interface HeaderProps {
   activeTab: string;
@@ -33,9 +32,8 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
     isAdmin,
     adminOverrideMode,
     pendingExceptions,
+    logout,
   } = useChallenge();
-
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const handlePrevDay = () => {
     const cur = parseDate(currentDate);
@@ -65,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-md border-b border-white/[0.08] safe-top px-3 py-2">
       <div className="max-w-md mx-auto space-y-2">
-        {/* Top Line: Brand, User Info, Badges, Login/Admin */}
+        {/* Top Line: Brand, User Info, Badges, Logout */}
         <div className="flex items-center justify-between">
           {/* Brand & Active Day */}
           <button
@@ -88,33 +86,30 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-slate-400 font-medium truncate max-w-[110px]">
-                {currentUser.name}
+              <p className="text-[10px] text-slate-400 font-medium truncate max-w-[110px] flex items-center space-x-1">
+                <span>{currentUser?.avatar}</span>
+                <span className="font-bold text-slate-200">{currentUser?.name}</span>
               </p>
             </div>
           </button>
 
-          {/* Badges: Admin Indicator, Deposit, Streak, Login */}
+          {/* Badges: Admin, Deposit, Streak, Logout */}
           <div className="flex items-center space-x-1.5">
             {/* Admin Portal Button */}
-            {isAdmin ? (
+            {isAdmin && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className="relative px-2 py-1 rounded-md bg-purple-950/60 text-purple-300 border border-purple-600/50 text-[10px] font-extrabold flex items-center space-x-1 shadow-sm transition-all active:scale-95"
+                className={`relative px-2 py-1 rounded-md text-[10px] font-extrabold flex items-center space-x-1 shadow-sm transition-all active:scale-95 ${
+                  activeTab === 'admin'
+                    ? 'bg-purple-600 text-white shadow-glow-purple'
+                    : 'bg-purple-950/60 text-purple-300 border border-purple-600/50'
+                }`}
               >
                 <ShieldAlert className="w-3 h-3 text-purple-400" />
                 <span>ADMIN</span>
                 {pendingExceptions.length > 0 && (
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute -top-0.5 -right-0.5" />
                 )}
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsLoginModalOpen(true)}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
-                title="Switch Profile / Admin Login"
-              >
-                <KeyRound className="w-3.5 h-3.5" />
               </button>
             )}
 
@@ -149,43 +144,57 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500 animate-flame" />
               <span>{streakStats.currentStreak}d</span>
             </div>
+
+            {/* Logout button */}
+            <button
+              onClick={() => {
+                if (window.confirm('Log out of 75 HARD? Your checklist will be locked until you re-authenticate.')) {
+                  logout();
+                }
+              }}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-all border border-white/5"
+              title="Log Out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
-        {/* 3 CHALLENGERS SQUAD SWITCHER BAR */}
-        <div className="bg-black/40 rounded-xl p-1 border border-white/[0.06] flex items-center justify-between gap-1">
-          {squadMembers.map(member => {
-            const isSelected = member.user.id === currentUser.id;
-            return (
-              <button
-                key={member.user.id}
-                onClick={() => setCurrentUserId(member.user.id)}
-                className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between min-w-0 ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-sm ring-1 ring-white/20'
-                    : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.08]'
-                }`}
-              >
-                <div className="flex items-center space-x-1.5 truncate">
-                  <span className="text-sm shrink-0">{member.user.avatar}</span>
-                  <span className="truncate text-[11px] font-bold">{member.user.name}</span>
-                </div>
-                <span
-                  className={`text-[9px] px-1 py-0.2 rounded font-black ml-1 shrink-0 ${
-                    member.todayAllCompleted
-                      ? 'bg-emerald-500 text-black font-extrabold'
-                      : isSelected
-                      ? 'bg-white/20 text-white'
-                      : 'bg-black/40 text-slate-500'
+        {/* SQUAD MEMBER QUICK SWITCHER (IF ADMIN OR MULTI-USER) */}
+        {isAdmin && squadMembers.length > 0 && (
+          <div className="bg-black/40 rounded-xl p-1 border border-white/[0.06] flex items-center justify-between gap-1">
+            {squadMembers.map(member => {
+              const isSelected = member.user.id === currentUser?.id;
+              return (
+                <button
+                  key={member.user.id}
+                  onClick={() => setCurrentUserId(member.user.id)}
+                  className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between min-w-0 ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-sm ring-1 ring-white/20'
+                      : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.08]'
                   }`}
-                  title={`${member.todayCompletedCount}/${member.todayTotalCount} completed today`}
                 >
-                  {member.todayAllCompleted ? '✓' : `${member.todayCompletedCount}/11`}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <div className="flex items-center space-x-1.5 truncate">
+                    <span className="text-sm shrink-0">{member.user.avatar}</span>
+                    <span className="truncate text-[11px] font-bold">{member.user.name}</span>
+                  </div>
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded font-black ml-1 shrink-0 ${
+                      member.todayAllCompleted
+                        ? 'bg-emerald-500 text-black font-extrabold'
+                        : isSelected
+                        ? 'bg-white/20 text-white'
+                        : 'bg-black/40 text-slate-500'
+                    }`}
+                  >
+                    {member.todayAllCompleted ? '✓' : `${member.todayCompletedCount}/11`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Date Navigator Bar with Admin Override indication */}
         <div className="pt-1 flex items-center justify-between">
@@ -235,13 +244,6 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           </button>
         </div>
       </div>
-
-      {/* Login / Admin Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onSuccessAdmin={() => setActiveTab('admin')}
-      />
     </header>
   );
 };

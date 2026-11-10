@@ -9,10 +9,12 @@ export type ExemptionStatus = 'none' | 'pending' | 'approved' | 'rejected';
 export interface UserProfile {
   id: string; // 'user_1', 'user_2', 'user_3', 'admin'
   name: string; // e.g. 'Vedant', 'Challenger 2', 'Challenger 3', 'Admin'
+  username?: string;
   avatar: string; // emoji or initials
   color: string; // accent color class
   role: UserRole;
   pin?: string; // 4-digit PIN
+  depositAmount?: number;
 }
 
 export interface HabitConfig {

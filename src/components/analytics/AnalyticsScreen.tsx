@@ -112,8 +112,8 @@ export const AnalyticsScreen: React.FC = () => {
       {/* Title */}
       <div>
         <div className="flex items-center space-x-2">
-          <span className="text-sm">{currentUser.avatar}</span>
-          <h2 className="text-base font-extrabold text-white">Performance ({currentUser.name})</h2>
+          <span className="text-sm">{currentUser?.avatar || '🔥'}</span>
+          <h2 className="text-base font-extrabold text-white">Performance ({currentUser?.name || 'Challenger'})</h2>
         </div>
         <p className="text-slate-400 mt-0.5">Deep analytics of your 75 HARD mental toughness journey.</p>
       </div>

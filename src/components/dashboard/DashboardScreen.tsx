@@ -71,7 +71,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <div>
               <span className="font-bold text-purple-300">Admin Override Active ({currentDate})</span>
               <p className="text-[11px] text-purple-200/80">
-                You have master permissions to edit past/future days for {currentUser.name}.
+                You have master permissions to edit past/future days for {currentUser?.name || 'Challenger'}.
               </p>
             </div>
           </div>
@@ -121,7 +121,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
         <div className="grid grid-cols-3 gap-2">
           {squadMembers.map(member => {
-            const isSelf = member.user.id === currentUser.id;
+            const isSelf = member.user.id === currentUser?.id;
             return (
               <div
                 key={member.user.id}

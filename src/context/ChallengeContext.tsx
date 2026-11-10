@@ -18,396 +18,356 @@ import {
   validateDayTasks,
   isDateEditable,
 } from '../services/rulesEngine';
-import { storage, DEFAULT_USERS } from '../services/storage';
-import {
-  fetchAllLogsFromSupabase,
-  syncAllUsersLogsToSupabase,
-  syncLogToSupabase,
-} from '../services/supabase';
+import { api } from '../services/api';
+import { sound } from '../services/audio';
 import { setupDailyReminder } from '../services/notifications';
 
 interface ChallengeContextType {
   config: ChallengeConfig;
-  updateConfig: (patch: Partial<ChallengeConfig>) => void;
-  // Multi-user & Auth
+  updateConfig: (patch: Partial<ChallengeConfig>) => Promise<void>;
+  // Auth & Multi-user
+  currentUser: UserProfile | null;
   users: UserProfile[];
-  currentUser: UserProfile;
-  setCurrentUserId: (id: string) => void;
-  updateUserProfile: (id: string, patch: Partial<UserProfile>) => void;
-  squadMembers: SquadMemberStatus[];
-  // Admin & Override
   isAdmin: boolean;
   adminOverrideMode: boolean;
   setAdminOverrideMode: (val: boolean) => void;
-  loginAsAdmin: (pin: string) => { success: boolean; message: string };
-  logoutAdmin: () => void;
+  loginChallenger: (username: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  loginAdmin: (pin: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
+  // Admin user management
+  adminAddUser: (userData: { name: string; username: string; pin: string; avatar: string; depositAmount: number }) => Promise<{ success: boolean; error?: string }>;
+  adminDeleteUser: (id: string) => Promise<boolean>;
+  // Admin Time-Machine & Exceptions
   pendingExceptions: PendingExceptionItem[];
-  approveException: (userId: string, dateStr: string, comment?: string) => void;
-  rejectException: (userId: string, dateStr: string, comment?: string) => void;
-  adminUpdateLog: (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => void;
-  // Logs & Dates
+  approveException: (userId: string, dateStr: string, comment?: string) => Promise<void>;
+  rejectException: (userId: string, dateStr: string, comment?: string) => Promise<void>;
+  adminUpdateLog: (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => Promise<void>;
+  // DB settings on backend
+  dbSettings: { supabaseUrl: string; hasKey: boolean; isConnected: boolean } | null;
+  updateDbSettings: (settings: { supabaseUrl: string; supabaseAnonKey?: string }) => Promise<{ success: boolean; message: string }>;
+  // Logs & Tracking
   logs: Record<string, DailyLog>;
   allUsersLogs: Record<string, Record<string, DailyLog>>;
   currentDate: string;
   setCurrentDate: (date: string) => void;
   currentLog: DailyLog;
-  updateCurrentLog: (updater: (prev: DailyLog) => DailyLog) => boolean;
+  updateCurrentLog: (updater: (prev: DailyLog) => DailyLog) => Promise<boolean>;
   streakStats: StreakStats;
+  squadMembers: SquadMemberStatus[];
   isEditable: boolean;
   isToday: boolean;
-  // Sync & Actions
-  syncState: {
-    syncing: boolean;
-    lastSynced?: string;
-    error?: string;
-  };
-  syncToCloud: () => Promise<boolean>;
-  pullFromCloud: () => Promise<boolean>;
-  resetChallenge: () => void;
   celebrateCompletion: () => void;
+  setCurrentUserId: (id: string) => void;
 }
 
 const ChallengeContext = createContext<ChallengeContextType | undefined>(undefined);
 
 export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [config, setConfigState] = useState<ChallengeConfig>(() => storage.getConfig());
-  const [users, setUsersState] = useState<UserProfile[]>(() => storage.getUsers());
-  const [activeUserId, setActiveUserIdState] = useState<string>(() => storage.getActiveUserId());
-  const [allUsersLogs, setAllUsersLogs] = useState<Record<string, Record<string, DailyLog>>>(() =>
-    storage.getAllUsersLogs()
-  );
+  const [config, setConfigState] = useState<ChallengeConfig>(DEFAULT_CONFIG);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [logs, setLogs] = useState<Record<string, DailyLog>>({});
+  const [allUsersLogs, setAllUsersLogs] = useState<Record<string, Record<string, DailyLog>>>({});
+  const [squadMembers, setSquadMembers] = useState<SquadMemberStatus[]>([]);
+  const [pendingExceptions, setPendingExceptions] = useState<PendingExceptionItem[]>([]);
+  const [dbSettings, setDbSettings] = useState<{ supabaseUrl: string; hasKey: boolean; isConnected: boolean } | null>(null);
+
   const [currentDate, setCurrentDate] = useState<string>(() => formatDate(new Date()));
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    const session = storage.getAuthSession();
-    return session?.role === 'admin' && session?.isLoggedIn;
-  });
   const [adminOverrideMode, setAdminOverrideMode] = useState<boolean>(false);
-  const [syncState, setSyncState] = useState<{ syncing: boolean; lastSynced?: string; error?: string }>({
-    syncing: false,
-  });
+  const [isLoadingSession, setIsLoadingSession] = useState<boolean>(true);
 
-  // Current active user object (if admin, targets active challenger or admin)
-  const currentUser = useMemo(() => {
-    return users.find(u => u.id === activeUserId) || users[0] || DEFAULT_USERS[0];
-  }, [users, activeUserId]);
-
-  // Current user's logs
-  const logs = useMemo(() => {
-    return allUsersLogs[activeUserId] || {};
-  }, [allUsersLogs, activeUserId]);
-
-  // Switch active user
-  const setCurrentUserId = useCallback((id: string) => {
-    setActiveUserIdState(id);
-    storage.setActiveUserId(id);
-  }, []);
-
-  // Update user profile
-  const updateUserProfile = useCallback((id: string, patch: Partial<UserProfile>) => {
-    setUsersState(prev => {
-      const updated = prev.map(u => (u.id === id ? { ...u, ...patch } : u));
-      storage.saveUsers(updated);
-      return updated;
-    });
-  }, []);
-
-  // Admin authentication
-  const loginAsAdmin = useCallback(
-    (pin: string): { success: boolean; message: string } => {
-      if (pin === config.adminPin || pin === '7575') {
-        setIsAdmin(true);
-        setAdminOverrideMode(true);
-        storage.saveAuthSession({ isLoggedIn: true, userId: 'admin', role: 'admin' });
-        return { success: true, message: 'Admin access granted! Override powers activated.' };
-      }
-      return { success: false, message: 'Invalid Admin PIN. Try again.' };
-    },
-    [config.adminPin]
-  );
-
-  const logoutAdmin = useCallback(() => {
-    setIsAdmin(false);
-    setAdminOverrideMode(false);
-    storage.saveAuthSession(null);
-    if (activeUserId === 'admin') {
-      setCurrentUserId('user_1');
-    }
-  }, [activeUserId, setCurrentUserId]);
-
-  // Save config on change
-  const updateConfig = useCallback((patch: Partial<ChallengeConfig>) => {
-    setConfigState(prev => {
-      const updated = { ...prev, ...patch };
-      storage.saveConfig(updated);
-      return updated;
-    });
-  }, []);
-
-  // Today checks & Admin override check
   const todayStr = formatDate(new Date());
   const isTodayDate = currentDate === todayStr;
+  const isAdmin = currentUser?.role === 'admin';
   const isEditable = isDateEditable(currentDate, config, isAdmin || adminOverrideMode);
 
-  // Setup 9 PM reminder
+  // Load config & initial session
+  const refreshAppData = useCallback(async (user: UserProfile | null) => {
+    try {
+      const cfg = await api.getConfig();
+      if (cfg && cfg.startDate) {
+        setConfigState({ ...DEFAULT_CONFIG, ...cfg });
+      }
+
+      if (user) {
+        const squad = await api.getSquad();
+        setSquadMembers(squad);
+
+        if (user.role === 'admin') {
+          const adminUsers = await api.adminGetUsers();
+          setUsers(adminUsers);
+          const exceptions = await api.adminGetExceptions();
+          setPendingExceptions(exceptions);
+          const dbInfo = await api.adminGetDbSettings();
+          setDbSettings(dbInfo);
+        } else {
+          // Standard challenger: load their logs
+          const userLogs = await api.getLogs(user.id);
+          setLogs(userLogs);
+        }
+      }
+    } catch (err) {
+      console.warn('Error refreshing app data:', err);
+    }
+  }, []);
+
+  // Check saved session on mount
+  useEffect(() => {
+    const initAuth = async () => {
+      const session = api.getSession();
+      if (session.userId) {
+        try {
+          const meRes = await api.getConfig(); // test connection
+          if (session.role === 'admin') {
+            const adminUser: UserProfile = {
+              id: 'admin',
+              name: 'Referee / Admin',
+              username: 'admin',
+              role: 'admin',
+              avatar: '⚖️',
+              color: 'from-purple-600 to-indigo-800',
+            };
+            setCurrentUser(adminUser);
+            await refreshAppData(adminUser);
+          } else {
+            // Find challenger
+            const squad = await api.getSquad();
+            const found = squad.find(s => s.user.id === session.userId);
+            if (found) {
+              setCurrentUser(found.user);
+              await refreshAppData(found.user);
+            } else {
+              api.logout();
+              setCurrentUser(null);
+            }
+          }
+        } catch (e) {
+          api.logout();
+          setCurrentUser(null);
+        }
+      } else {
+        // Load public squad & config for login preview
+        try {
+          const cfg = await api.getConfig();
+          if (cfg && cfg.startDate) setConfigState({ ...DEFAULT_CONFIG, ...cfg });
+          const squad = await api.getSquad();
+          if (squad && squad.length > 0) {
+            setUsers(squad.map(s => s.user));
+          }
+        } catch (e) {}
+      }
+      setIsLoadingSession(false);
+    };
+
+    initAuth();
+  }, [refreshAppData]);
+
+  // 9 PM reminder
   useEffect(() => {
     setupDailyReminder(config.reminderTime, config.reminderEnabled);
   }, [config.reminderTime, config.reminderEnabled]);
 
-  // Ensure current date log exists for active user
+  // Challenger Login
+  const loginChallenger = async (username: string, pin: string) => {
+    const res = await api.loginChallenger(username, pin);
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      await refreshAppData(res.user);
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  // Admin Login
+  const loginAdmin = async (pin: string) => {
+    const res = await api.loginAdmin(pin);
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      setAdminOverrideMode(true);
+      await refreshAppData(res.user);
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  // Logout
+  const logout = () => {
+    api.logout();
+    setCurrentUser(null);
+    setLogs({});
+    setAdminOverrideMode(false);
+  };
+
+  // Switch challenger view (if admin)
+  const setCurrentUserId = async (id: string) => {
+    if (isAdmin) {
+      const targetLogs = await api.getLogs(id);
+      setLogs(targetLogs);
+    }
+  };
+
+  // Current active date's log
   const currentLog = useMemo(() => {
     if (logs[currentDate]) {
       return logs[currentDate];
     }
-    return createDefaultLog(currentDate, config, activeUserId);
-  }, [logs, currentDate, config, activeUserId]);
+    return createDefaultLog(currentDate, config, currentUser?.id || 'user_1');
+  }, [logs, currentDate, config, currentUser]);
 
-  // Update current date's log (Admin or Today only)
+  // Update current date's log (enforces today-only on server side!)
   const updateCurrentLog = useCallback(
-    (updater: (prev: DailyLog) => DailyLog): boolean => {
-      const hasPermission = isAdmin || adminOverrideMode || !config.lockPastDays || currentDate === todayStr;
+    async (updater: (prev: DailyLog) => DailyLog): Promise<boolean> => {
+      if (!currentUser) return false;
 
-      if (!hasPermission) {
-        alert("🔒 75 HARD RULE: Standard challengers can only make changes to TODAY'S checklist. An Admin can override this from the Admin Panel.");
+      const existing = logs[currentDate] || createDefaultLog(currentDate, config, currentUser.id);
+      const updated = updater(existing);
+
+      updated.userId = currentUser.id;
+      updated.id = `${currentUser.id}_${currentDate}`;
+      updated.status = computeDayStatus(updated, config);
+      const { failedNames, allCompleted } = validateDayTasks(updated, config);
+      updated.failedTasks = allCompleted ? [] : failedNames;
+      if (allCompleted && !updated.completedAt) {
+        updated.completedAt = new Date().toISOString();
+        sound.playDayComplete();
+      } else {
+        sound.playTaskCheck();
+      }
+      updated.updatedAt = new Date().toISOString();
+
+      // Optimistic state update
+      setLogs(prev => ({ ...prev, [currentDate]: updated }));
+
+      // Save to backend
+      const res = await api.saveLog(updated);
+      if (!res.success) {
+        alert(res.error || 'Failed to save log to backend');
         return false;
       }
 
-      setAllUsersLogs(prevAll => {
-        const userLogs = prevAll[activeUserId] || {};
-        const existing = userLogs[currentDate] || createDefaultLog(currentDate, config, activeUserId);
-        const updated = updater(existing);
-
-        updated.userId = activeUserId;
-        updated.id = `${activeUserId}_${currentDate}`;
-
-        // Recompute status
-        updated.status = computeDayStatus(updated, config);
-        const { failedNames, allCompleted } = validateDayTasks(updated, config);
-        updated.failedTasks = allCompleted ? [] : failedNames;
-        if (allCompleted && !updated.completedAt) {
-          updated.completedAt = new Date().toISOString();
-        } else if (!allCompleted) {
-          updated.completedAt = undefined;
-        }
-        updated.updatedAt = new Date().toISOString();
-
-        const newUserLogs = { ...userLogs, [currentDate]: updated };
-        const newAll = { ...prevAll, [activeUserId]: newUserLogs };
-
-        storage.saveUserLog(activeUserId, updated);
-
-        if (config.autoSyncSupabase && config.supabaseUrl && config.supabaseAnonKey) {
-          syncLogToSupabase(updated, config).catch(e => console.warn('Supabase auto-sync failed', e));
-        }
-
-        return newAll;
-      });
-
+      // Refresh squad progress
+      api.getSquad().then(setSquadMembers).catch(() => {});
       return true;
     },
-    [currentDate, todayStr, config, activeUserId, isAdmin, adminOverrideMode]
+    [currentUser, logs, currentDate, config]
   );
 
-  // Admin Direct Update: Can edit ANY past or future date for ANY challenger!
-  const adminUpdateLog = useCallback(
-    (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => {
-      setAllUsersLogs(prevAll => {
-        const userLogs = prevAll[userId] || {};
-        const existing = userLogs[dateStr] || createDefaultLog(dateStr, config, userId);
-        const updated = updater(existing);
+  // Admin: Update System Config
+  const updateConfig = async (patch: Partial<ChallengeConfig>) => {
+    try {
+      const updated = await api.adminUpdateConfig(patch);
+      setConfigState({ ...DEFAULT_CONFIG, ...updated });
+    } catch (e: any) {
+      alert(e.message || 'Failed to update system config');
+    }
+  };
 
-        updated.userId = userId;
-        updated.id = `${userId}_${dateStr}`;
-        updated.status = computeDayStatus(updated, config);
-        const { failedNames, allCompleted } = validateDayTasks(updated, config);
-        updated.failedTasks = allCompleted ? [] : failedNames;
-        updated.updatedAt = new Date().toISOString();
+  // Admin: Add Challenger
+  const adminAddUser = async (userData: { name: string; username: string; pin: string; avatar: string; depositAmount: number }) => {
+    try {
+      const newUser = await api.adminAddUser(userData);
+      setUsers(prev => [...prev, newUser]);
+      const squad = await api.getSquad();
+      setSquadMembers(squad);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
 
-        const newUserLogs = { ...userLogs, [dateStr]: updated };
-        const newAll = { ...prevAll, [userId]: newUserLogs };
+  // Admin: Delete Challenger
+  const adminDeleteUser = async (id: string) => {
+    try {
+      await api.adminDeleteUser(id);
+      setUsers(prev => prev.filter(u => u.id !== id));
+      const squad = await api.getSquad();
+      setSquadMembers(squad);
+      return true;
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete user');
+      return false;
+    }
+  };
 
-        storage.saveUserLog(userId, updated);
+  // Admin: Time-Machine Override (Modify any past or future day)
+  const adminUpdateLog = async (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => {
+    const existing = logs[dateStr] || createDefaultLog(dateStr, config, userId);
+    const updated = updater(existing);
 
-        if (config.autoSyncSupabase && config.supabaseUrl && config.supabaseAnonKey) {
-          syncLogToSupabase(updated, config).catch(e => console.warn('Supabase auto-sync failed', e));
-        }
+    updated.userId = userId;
+    updated.id = `${userId}_${dateStr}`;
+    updated.status = computeDayStatus(updated, config);
+    const { failedNames } = validateDayTasks(updated, config);
+    updated.failedTasks = failedNames;
+    updated.updatedAt = new Date().toISOString();
 
-        return newAll;
-      });
-    },
-    [config]
-  );
+    setLogs(prev => ({ ...prev, [dateStr]: updated }));
 
-  // Find all pending exception requests across all challengers
-  const pendingExceptions = useMemo((): PendingExceptionItem[] => {
-    const list: PendingExceptionItem[] = [];
-    users.filter(u => u.role !== 'admin').forEach(user => {
-      const uLogs = allUsersLogs[user.id] || {};
-      Object.values(uLogs).forEach(log => {
-        if (log.sickness.isSick && log.sickness.status === 'pending') {
-          list.push({
-            userId: user.id,
-            userName: user.name,
-            userAvatar: user.avatar,
-            date: log.date,
-            dayNumber: log.dayNumber,
-            doctorNotes: log.sickness.doctorNotes,
-            medicalProofUrl: log.sickness.medicalProofUrl,
-            medicalProofName: log.sickness.medicalProofName,
-            submittedAt: log.updatedAt,
-          });
-        }
-      });
-    });
-    return list;
-  }, [users, allUsersLogs]);
+    await api.adminOverrideLog(userId, dateStr, updated);
+    api.getSquad().then(setSquadMembers).catch(() => {});
+  };
 
-  // Admin approves exception
-  const approveException = useCallback(
-    (userId: string, dateStr: string, comment?: string) => {
-      adminUpdateLog(userId, dateStr, prev => ({
-        ...prev,
-        sickness: {
-          ...prev.sickness,
-          isExempt: true,
-          status: 'approved',
-          reviewedBy: 'Admin',
-          reviewedAt: new Date().toISOString(),
-          adminComment: comment || 'Verified medical proof approved by Admin.',
-        },
-      }));
-    },
-    [adminUpdateLog]
-  );
+  // Admin: Approve Exception
+  const approveException = async (userId: string, dateStr: string, comment?: string) => {
+    await api.adminReviewException(userId, dateStr, 'approve', comment);
+    setPendingExceptions(prev => prev.filter(e => !(e.userId === userId && e.date === dateStr)));
+    // reload logs
+    const updatedLogs = await api.getLogs(userId);
+    setLogs(updatedLogs);
+  };
 
-  // Admin rejects exception
-  const rejectException = useCallback(
-    (userId: string, dateStr: string, comment?: string) => {
-      adminUpdateLog(userId, dateStr, prev => ({
-        ...prev,
-        sickness: {
-          ...prev.sickness,
-          isExempt: false,
-          status: 'rejected',
-          reviewedBy: 'Admin',
-          reviewedAt: new Date().toISOString(),
-          adminComment: comment || 'Medical proof rejected by Admin.',
-        },
-      }));
-    },
-    [adminUpdateLog]
-  );
+  // Admin: Reject Exception
+  const rejectException = async (userId: string, dateStr: string, comment?: string) => {
+    await api.adminReviewException(userId, dateStr, 'reject', comment);
+    setPendingExceptions(prev => prev.filter(e => !(e.userId === userId && e.date === dateStr)));
+    const updatedLogs = await api.getLogs(userId);
+    setLogs(updatedLogs);
+  };
 
-  // Calculate streak stats dynamically for active user
+  // Admin: Update DB Settings
+  const updateDbSettings = async (settings: { supabaseUrl: string; supabaseAnonKey?: string }) => {
+    const res = await api.adminUpdateDbSettings(settings);
+    const info = await api.adminGetDbSettings();
+    setDbSettings(info);
+    return res;
+  };
+
+  // Streak Stats
   const streakStats = useMemo(() => {
-    return calculateStreakStats(logs, config, activeUserId);
-  }, [logs, config, activeUserId]);
-
-  // Calculate squad members' today status
-  const squadMembers = useMemo((): SquadMemberStatus[] => {
-    return users.filter(u => u.role !== 'admin').map(user => {
-      const uLogs = allUsersLogs[user.id] || {};
-      const todayLog = uLogs[todayStr] || createDefaultLog(todayStr, config, user.id);
-      const { completedCount, totalCount, allCompleted } = validateDayTasks(todayLog, config);
-      const uStreak = calculateStreakStats(uLogs, config, user.id);
-      const hasPending = Object.values(uLogs).some(l => l.sickness.isSick && l.sickness.status === 'pending');
-
-      return {
-        user,
-        todayCompletedCount: completedCount,
-        todayTotalCount: totalCount,
-        todayAllCompleted: allCompleted,
-        currentStreak: uStreak.currentStreak,
-        depositStatus: uStreak.depositStatus,
-        hasPendingException: hasPending,
-      };
-    });
-  }, [users, allUsersLogs, todayStr, config]);
+    return calculateStreakStats(logs, config, currentUser?.id || 'user_1');
+  }, [logs, config, currentUser]);
 
   const celebrateCompletion = useCallback(() => {
     try {
+      sound.playDayComplete();
       confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 },
         colors: ['#e11d48', '#10b981', '#3b82f6', '#f59e0b', '#ffffff'],
       });
-    } catch (e) {
-      console.warn('Confetti error', e);
-    }
+    } catch (e) {}
   }, []);
-
-  // Sync all users to Supabase
-  const syncToCloud = useCallback(async (): Promise<boolean> => {
-    if (!config.supabaseUrl || !config.supabaseAnonKey) {
-      setSyncState({ syncing: false, error: 'Supabase credentials not configured in settings.' });
-      return false;
-    }
-
-    setSyncState({ syncing: true });
-    try {
-      const count = await syncAllUsersLogsToSupabase(allUsersLogs, config);
-      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setSyncState({ syncing: false, lastSynced: nowStr });
-      return count > 0;
-    } catch (err: any) {
-      setSyncState({ syncing: false, error: err?.message || 'Sync failed' });
-      return false;
-    }
-  }, [allUsersLogs, config]);
-
-  // Pull all users from Supabase
-  const pullFromCloud = useCallback(async (): Promise<boolean> => {
-    if (!config.supabaseUrl || !config.supabaseAnonKey) {
-      setSyncState({ syncing: false, error: 'Supabase credentials not configured in settings.' });
-      return false;
-    }
-
-    setSyncState({ syncing: true });
-    try {
-      const cloudAll = await fetchAllLogsFromSupabase(config);
-      if (cloudAll) {
-        setAllUsersLogs(cloudAll);
-        Object.entries(cloudAll).forEach(([uid, uLogs]) => {
-          storage.saveUserLogs(uid, uLogs);
-        });
-        const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setSyncState({ syncing: false, lastSynced: nowStr });
-        return true;
-      }
-      setSyncState({ syncing: false, error: 'No data found in Supabase' });
-      return false;
-    } catch (err: any) {
-      setSyncState({ syncing: false, error: err?.message || 'Pull failed' });
-      return false;
-    }
-  }, [config]);
-
-  // Full challenge reset for active user
-  const resetChallenge = useCallback(() => {
-    setAllUsersLogs(prev => {
-      const freshUserLogs: Record<string, DailyLog> = {};
-      storage.saveUserLogs(activeUserId, freshUserLogs);
-      return { ...prev, [activeUserId]: freshUserLogs };
-    });
-  }, [activeUserId]);
 
   const value = {
     config,
     updateConfig,
-    users,
     currentUser,
-    setCurrentUserId,
-    updateUserProfile,
-    squadMembers,
+    users,
     isAdmin,
     adminOverrideMode,
     setAdminOverrideMode,
-    loginAsAdmin,
-    logoutAdmin,
+    loginChallenger,
+    loginAdmin,
+    logout,
+    adminAddUser,
+    adminDeleteUser,
     pendingExceptions,
     approveException,
     rejectException,
     adminUpdateLog,
+    dbSettings,
+    updateDbSettings,
     logs,
     allUsersLogs,
     currentDate,
@@ -415,14 +375,23 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     currentLog,
     updateCurrentLog,
     streakStats,
+    squadMembers,
     isEditable,
     isToday: isTodayDate,
-    syncState,
-    syncToCloud,
-    pullFromCloud,
-    resetChallenge,
     celebrateCompletion,
+    setCurrentUserId,
   };
+
+  if (isLoadingSession) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center text-white">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold tracking-wider uppercase text-slate-400">Loading 75 HARD System...</p>
+        </div>
+      </div>
+    );
+  }
 
   return <ChallengeContext.Provider value={value}>{children}</ChallengeContext.Provider>;
 };

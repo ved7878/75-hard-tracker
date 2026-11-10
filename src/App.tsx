@@ -9,12 +9,18 @@ import { TravelSicknessScreen } from './components/travel/TravelSicknessScreen';
 import { AnalyticsScreen } from './components/analytics/AnalyticsScreen';
 import { SettingsScreen } from './components/settings/SettingsScreen';
 import { AdminPanelScreen } from './components/admin/AdminPanelScreen';
+import { LoginScreen } from './components/auth/LoginScreen';
 import { TaskState } from './types';
 
 const MainAppContent: React.FC = () => {
+  const { currentUser, isAdmin } = useChallenge();
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [activeTaskId, setActiveTaskId] = useState<keyof TaskState | undefined>(undefined);
-  const { isAdmin } = useChallenge();
+
+  // AUTHENTICATION GATE: User must log in first before ANY content is visible!
+  if (!currentUser) {
+    return <LoginScreen />;
+  }
 
   const handleOpenTaskDetails = (taskId?: keyof TaskState) => {
     setActiveTaskId(taskId);

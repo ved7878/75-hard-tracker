@@ -117,7 +117,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
             <div>
               <span className="font-bold text-purple-300">Admin Override Mode Active ({currentDate})</span>
               <p className="text-[11px] text-purple-200/80">
-                You have master permissions to edit past and future tasks for {currentUser.name}.
+                You have master permissions to edit past and future tasks for {currentUser?.name || 'Challenger'}.
               </p>
             </div>
           </div>
@@ -157,8 +157,8 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
       <div className="rounded-xl glass-card p-3.5 border border-white/[0.08] flex items-center justify-between">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="text-sm">{currentUser.avatar}</span>
-            <h2 className="text-base font-extrabold text-white">{currentUser.name}'s Checklist</h2>
+            <span className="text-sm">{currentUser?.avatar || '🔥'}</span>
+            <h2 className="text-base font-extrabold text-white">{currentUser?.name || 'Challenger'}'s Checklist</h2>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
             {completedCount} of {totalCount} completed • {allCompleted ? 'Sealed & Victorious!' : isToday ? 'Keep pushing today' : 'Historical record'}
