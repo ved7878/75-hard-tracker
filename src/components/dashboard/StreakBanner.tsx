@@ -7,8 +7,36 @@ interface StreakBannerProps {
 }
 
 export const StreakBanner: React.FC<StreakBannerProps> = ({ onGoToTracker }) => {
-  const { streakStats, config } = useChallenge();
+  const { streakStats, config, isAdmin } = useChallenge();
   const isReset = streakStats.resetsCount > 0 && streakStats.currentStreak === 0;
+
+  if (isAdmin) {
+    return (
+      <div className="rounded-xl glass-card p-3.5 flex items-center justify-between border border-purple-500/30 bg-purple-950/20 text-xs">
+        <div className="flex items-center space-x-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-sm font-black text-white">Referee / Admin</span>
+              <span className="text-[10px] text-purple-300 font-bold bg-purple-500/20 px-1.5 rounded">
+                Zero Deposit
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Overseeing 3 challengers & deposit pool
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-black border border-purple-500/30">
+            REFEREE
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">

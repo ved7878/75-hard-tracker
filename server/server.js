@@ -194,7 +194,7 @@ app.get('/api/squad', authMiddleware, (req, res) => {
       todayAllCompleted: todayCompletedCount >= 11,
       currentStreak: streak,
       hasPendingException,
-      depositAmount: user.depositAmount || config.depositAmount,
+      depositAmount: user.role === 'admin' ? 0 : (user.depositAmount !== undefined ? user.depositAmount : config.depositAmount),
     };
   });
 

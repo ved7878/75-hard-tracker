@@ -59,7 +59,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     }
   };
 
-  const totalSquadDeposit = config.depositAmount * users.length;
+  const challengers = users.filter(u => u.role !== 'admin');
+  const totalSquadDeposit = challengers.reduce(
+    (sum, u) => sum + (u.depositAmount !== undefined ? u.depositAmount : config.depositAmount),
+    0
+  );
 
   return (
     <div className="space-y-4 pb-6">
@@ -111,7 +115,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <div className="flex items-center space-x-2">
             <Users className="w-4 h-4 text-rose-500" />
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Squad Accountability (3 Challengers)
+              Squad Accountability ({challengers.length} Challengers)
             </h3>
           </div>
           <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">

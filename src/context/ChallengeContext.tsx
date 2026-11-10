@@ -113,7 +113,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         currentStreak: streakStats.currentStreak,
         depositStatus: streakStats.depositStatus,
         hasPendingException: hasPending,
-        depositAmount: u.depositAmount || config.depositAmount,
+        depositAmount: u.depositAmount !== undefined ? u.depositAmount : config.depositAmount,
       };
     });
   }, [users, allUsersLogs, todayStr, config]);

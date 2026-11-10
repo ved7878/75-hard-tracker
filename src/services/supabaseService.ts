@@ -111,7 +111,7 @@ class SupabaseService {
             avatar: row.avatar,
             color: row.color,
             role: row.role,
-            depositAmount: Number(row.deposit_amount) || 2000,
+            depositAmount: row.role === 'admin' ? 0 : (Number(row.deposit_amount) || 2000),
             recoveryAnswer: row.recovery_answer,
             createdAt: row.created_at,
           }));
@@ -158,7 +158,7 @@ class SupabaseService {
               avatar: u.avatar,
               color: u.color,
               role: u.role,
-              depositAmount: Number(u.deposit_amount) || 2000,
+              depositAmount: u.role === 'admin' ? 0 : (Number(u.deposit_amount) || 2000),
               createdAt: u.created_at,
             };
             return { success: true, user };

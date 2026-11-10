@@ -113,28 +113,30 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               </button>
             )}
 
-            {/* Deposit Badge */}
-            <div
-              onClick={() => setActiveTab('analytics')}
-              className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-bold flex items-center space-x-1 border transition-all ${
-                streakStats.depositStatus === 'forfeited'
-                  ? 'bg-rose-950/60 text-rose-300 border-rose-700/50'
-                  : 'bg-emerald-950/50 text-emerald-300 border-emerald-700/40'
-              }`}
-              title={`Deposit: ${config.currencySymbol}${config.depositAmount}`}
-            >
-              {streakStats.depositStatus === 'forfeited' ? (
-                <>
-                  <AlertTriangle className="w-3 h-3 text-rose-400" />
-                  <span>Lost {config.currencySymbol}{config.depositAmount}</span>
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                  <span>{config.currencySymbol}{config.depositAmount}</span>
-                </>
-              )}
-            </div>
+            {/* Deposit Badge (Challengers Only - Admin does not have a deposit) */}
+            {!isAdmin && (
+              <div
+                onClick={() => setActiveTab('analytics')}
+                className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-bold flex items-center space-x-1 border transition-all ${
+                  streakStats.depositStatus === 'forfeited'
+                    ? 'bg-rose-950/60 text-rose-300 border-rose-700/50'
+                    : 'bg-emerald-950/50 text-emerald-300 border-emerald-700/40'
+                }`}
+                title={`Deposit: ${config.currencySymbol}${config.depositAmount}`}
+              >
+                {streakStats.depositStatus === 'forfeited' ? (
+                  <>
+                    <AlertTriangle className="w-3 h-3 text-rose-400" />
+                    <span>Lost {config.currencySymbol}{config.depositAmount}</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    <span>{config.currencySymbol}{config.depositAmount}</span>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Streak Flame */}
             <div

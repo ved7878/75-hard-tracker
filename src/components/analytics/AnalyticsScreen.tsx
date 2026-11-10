@@ -15,7 +15,7 @@ import {
 import { useChallenge } from '../../context/ChallengeContext';
 
 export const AnalyticsScreen: React.FC = () => {
-  const { logs, config, streakStats, currentUser } = useChallenge();
+  const { logs, config, streakStats, currentUser, isAdmin } = useChallenge();
 
   // Aggregate stats across all recorded days
   const aggregated = useMemo(() => {
@@ -118,43 +118,67 @@ export const AnalyticsScreen: React.FC = () => {
         <p className="text-slate-400 mt-0.5">Deep analytics of your 75 HARD mental toughness journey.</p>
       </div>
 
-      {/* Deposit Status Card */}
-      <div className={`p-4 rounded-2xl border ${
-        streakStats.depositStatus === 'forfeited'
-          ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
-          : 'glass-card border-white/[0.08] text-white'
-      }`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className={`p-2 rounded-xl ${streakStats.depositStatus === 'forfeited' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-              {streakStats.depositStatus === 'forfeited' ? (
-                <AlertTriangle className="w-5 h-5" />
-              ) : (
-                <ShieldCheck className="w-5 h-5" />
-              )}
+      {/* Deposit Status Card (Challengers Only) */}
+      {!isAdmin ? (
+        <div className={`p-4 rounded-2xl border ${
+          streakStats.depositStatus === 'forfeited'
+            ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+            : 'glass-card border-white/[0.08] text-white'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <div className={`p-2 rounded-xl ${streakStats.depositStatus === 'forfeited' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                {streakStats.depositStatus === 'forfeited' ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : (
+                  <ShieldCheck className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Deposit Accountability</span>
+                <h3 className="text-lg font-black tracking-tight">
+                  {config.currencySymbol}{currentUser?.depositAmount !== undefined ? currentUser.depositAmount : config.depositAmount} Deposit
+                </h3>
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Deposit Accountability</span>
-              <h3 className="text-lg font-black tracking-tight">
-                {config.currencySymbol}{config.depositAmount} Deposit
-              </h3>
-            </div>
+            <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+              streakStats.depositStatus === 'forfeited'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+            }`}>
+              {streakStats.depositStatus === 'forfeited' ? 'FORFEITED' : 'PROTECTED'}
+            </span>
           </div>
-          <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-            streakStats.depositStatus === 'forfeited'
-              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-          }`}>
-            {streakStats.depositStatus === 'forfeited' ? 'FORFEITED' : 'PROTECTED'}
-          </span>
-        </div>
 
-        <p className="mt-2 text-slate-400 leading-relaxed">
-          {streakStats.depositStatus === 'forfeited'
-            ? 'A day had incomplete tasks without an approved medical exemption. Count was reset to 0 in strict 75 Hard style.'
-            : 'Your ₹2,000 pledge is completely intact. Continue executing all 11 habits daily to claim victory at Day 75!'}
-        </p>
-      </div>
+          <p className="mt-2 text-slate-400 leading-relaxed text-[11px]">
+            {streakStats.depositStatus === 'forfeited'
+              ? 'A day had incomplete tasks without an approved medical exemption. Count was reset to 0 in strict 75 Hard style.'
+              : 'Your pledge is completely intact. Continue executing all 11 habits daily to claim victory at Day 75!'}
+          </p>
+        </div>
+      ) : (
+        <div className="p-4 rounded-2xl glass-card border border-purple-500/30 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-300">Referee / Admin</span>
+                <h3 className="text-lg font-black tracking-tight text-white">
+                  Zero Deposit Required
+                </h3>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              REFEREE
+            </span>
+          </div>
+          <p className="mt-2 text-slate-400 leading-relaxed text-[11px]">
+            As the referee, you oversee the challengers' deposit pool and review medical exception requests. You have no personal deposit pledge.
+          </p>
+        </div>
+      )}
 
       {/* Streak & Completion Summary */}
       <div className="grid grid-cols-3 gap-2">

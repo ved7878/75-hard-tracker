@@ -61,9 +61,15 @@ export const SettingsScreen: React.FC = () => {
             <p className="text-[11px] text-slate-400 font-mono">
               Username: <strong className="text-slate-300">@{currentUser?.username || 'user'}</strong>
             </p>
-            <span className="text-[10px] text-emerald-400 font-bold">
-              ₹{currentUser?.depositAmount || config.depositAmount} Deposit Pledge
-            </span>
+            {isAdmin ? (
+              <span className="text-[10px] text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 inline-block mt-1">
+                Challenge Referee • Zero Deposit
+              </span>
+            ) : (
+              <span className="text-[10px] text-emerald-400 font-bold">
+                {config.currencySymbol}{currentUser?.depositAmount !== undefined ? currentUser.depositAmount : config.depositAmount} Deposit Pledge
+              </span>
+            )}
           </div>
         </div>
 
