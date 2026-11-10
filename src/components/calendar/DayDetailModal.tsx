@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { DailyLog, ChallengeConfig } from '../../types';
 import { validateDayTasks, isToday } from '../../services/rulesEngine';
+import { useChallenge } from '../../context/ChallengeContext';
 
 interface DayDetailModalProps {
   log: DailyLog;
@@ -27,6 +28,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
   onClose,
   onJumpToDate,
 }) => {
+  const { isAdmin, adminOverrideMode } = useChallenge();
   if (!isOpen) return null;
 
   const { items, allCompleted, completedCount, totalCount } = validateDayTasks(log, config);
@@ -185,7 +187,13 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
             className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95"
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>{isTodayDate ? 'Edit Today in Tracker' : 'View in Tracker'}</span>
+            <span>
+              {isTodayDate
+                ? 'Edit Today in Tracker'
+                : isAdmin || adminOverrideMode
+                ? 'Edit Day in Tracker (Admin Override)'
+                : 'View in Tracker'}
+            </span>
           </button>
         </div>
       </div>

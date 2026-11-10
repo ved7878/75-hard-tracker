@@ -8,11 +8,13 @@ import { CalendarScreen } from './components/calendar/CalendarScreen';
 import { TravelSicknessScreen } from './components/travel/TravelSicknessScreen';
 import { AnalyticsScreen } from './components/analytics/AnalyticsScreen';
 import { SettingsScreen } from './components/settings/SettingsScreen';
+import { AdminPanelScreen } from './components/admin/AdminPanelScreen';
 import { TaskState } from './types';
 
 const MainAppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [activeTaskId, setActiveTaskId] = useState<keyof TaskState | undefined>(undefined);
+  const { isAdmin } = useChallenge();
 
   const handleOpenTaskDetails = (taskId?: keyof TaskState) => {
     setActiveTaskId(taskId);
@@ -45,6 +47,7 @@ const MainAppContent: React.FC = () => {
         {activeTab === 'travel' && <TravelSicknessScreen />}
         {activeTab === 'analytics' && <AnalyticsScreen />}
         {activeTab === 'settings' && <SettingsScreen />}
+        {activeTab === 'admin' && <AdminPanelScreen />}
       </main>
 
       {/* Mobile Bottom Navigation */}
@@ -62,4 +65,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

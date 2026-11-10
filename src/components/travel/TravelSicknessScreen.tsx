@@ -12,6 +12,9 @@ import {
   CheckCircle2,
   XCircle,
   Lock,
+  Hourglass,
+  KeyRound,
+  AlertCircle,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { formatDate } from '../../services/rulesEngine';
@@ -26,6 +29,10 @@ export const TravelSicknessScreen: React.FC = () => {
     currentDate,
     setCurrentDate,
     currentUser,
+    isAdmin,
+    adminOverrideMode,
+    approveException,
+    rejectException,
   } = useChallenge();
 
   const medicalProofInputRef = useRef<HTMLInputElement>(null);
@@ -50,7 +57,9 @@ export const TravelSicknessScreen: React.FC = () => {
             hasMedicalProof: true,
             medicalProofUrl: base64,
             medicalProofName: file.name,
-            isExempt: true, // auto approve exemption once medical document is uploaded
+            // If admin is uploading, auto-approve; otherwise it goes to pending review!
+            isExempt: isAdmin || adminOverrideMode,
+            status: isAdmin || adminOverrideMode ? 'approved' : 'pending',
           },
         }));
       };
@@ -60,7 +69,7 @@ export const TravelSicknessScreen: React.FC = () => {
 
   return (
     <div className="space-y-5 pb-8">
-      {/* LOCKED NOTICE IF VIEWING NON-TODAY */}
+      {/* LOCKED NOTICE IF VIEWING NON-TODAY WITHOUT ADMIN */}
       {!isEditable && (
         <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2.5">
@@ -70,7 +79,7 @@ export const TravelSicknessScreen: React.FC = () => {
                 Read-Only Rules View ({currentDate})
               </span>
               <p className="text-[11px] text-amber-200/80 leading-tight">
-                Travel & sickness conditions can only be claimed for <strong>TODAY</strong>.
+                Challengers can only report conditions for <strong>TODAY</strong>. Log in as Admin to edit past/future days.
               </p>
             </div>
           </div>
@@ -90,7 +99,7 @@ export const TravelSicknessScreen: React.FC = () => {
           <h2 className="text-base font-extrabold text-white">Travel & Sickness ({currentUser.name})</h2>
         </div>
         <p className="text-xs text-slate-400 mt-0.5">
-          Dynamic adjustments apply for today's active schedule.
+          Dynamic adjustments & official referee exception requests.
         </p>
       </div>
 
@@ -253,8 +262,8 @@ export const TravelSicknessScreen: React.FC = () => {
               <HeartPulse className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Sickness & Medical Exemption</h3>
-              <p className="text-xs text-slate-400">Health and safety take priority</p>
+              <h3 className="text-sm font-bold text-white">Sickness Exception Request</h3>
+              <p className="text-xs text-slate-400">Health first • Subject to Admin approval</p>
             </div>
           </div>
 
@@ -270,7 +279,8 @@ export const TravelSicknessScreen: React.FC = () => {
                   sickness: {
                     ...prev.sickness,
                     isSick: checked,
-                    isExempt: checked && Boolean(prev.sickness.hasMedicalProof),
+                    status: checked && prev.sickness.hasMedicalProof ? 'pending' : 'none',
+                    isExempt: false,
                   },
                 }));
               }}
@@ -287,8 +297,8 @@ export const TravelSicknessScreen: React.FC = () => {
             <span>Strict 75 Hard Exemption Rules</span>
           </div>
           <p className="text-[11px] text-rose-200/80 leading-relaxed">
-            • <strong>At home:</strong> No exceptions (headaches, laziness, fatigue are not exemptions).
-            <br />• <strong>Genuine sickness:</strong> Exception granted ONLY with valid medical proof (doctor prescription or hospital certificate).
+            • <strong>At home:</strong> Zero exceptions (fatigue, muscle soreness, laziness are not exemptions).
+            <br />• <strong>Genuine sickness:</strong> Exception granted <strong>ONLY with valid medical proof</strong> uploaded and approved by the Admin / Referee.
           </p>
         </div>
 
@@ -298,7 +308,7 @@ export const TravelSicknessScreen: React.FC = () => {
             <div className="space-y-2">
               <span className="font-bold text-white flex items-center space-x-1.5">
                 <FileCheck className="w-4 h-4 text-blue-400" />
-                <span>Upload Medical Proof / Prescription:</span>
+                <span>Upload Medical Proof / Doctor Slip:</span>
               </span>
 
               {sickness.medicalProofUrl ? (
@@ -331,7 +341,7 @@ export const TravelSicknessScreen: React.FC = () => {
                   }`}
                 >
                   <Upload className="w-6 h-6 mb-1 text-blue-400" />
-                  <span className="text-xs font-bold">Upload Doctor Slip or Rx Image</span>
+                  <span className="text-xs font-bold">Upload Doctor Prescription / Slip</span>
                   <span className="text-[10px] text-slate-500">JPG, PNG, PDF medical certificate</span>
                 </button>
               )}
@@ -347,11 +357,11 @@ export const TravelSicknessScreen: React.FC = () => {
 
             {/* Doctor Notes */}
             <div className="space-y-1">
-              <span className="font-semibold text-slate-300">Doctor Advice & Diagnosis:</span>
+              <span className="font-semibold text-slate-300">Doctor Advice & Symptoms:</span>
               <textarea
                 rows={2}
                 disabled={!isEditable}
-                placeholder="e.g. Acute viral fever, doctor advised complete bed rest for 2 days..."
+                placeholder="e.g. High fever, doctor advised 2 days bed rest..."
                 value={sickness.doctorNotes || ''}
                 onChange={e => updateCurrentLog(prev => ({
                   ...prev,
@@ -361,34 +371,82 @@ export const TravelSicknessScreen: React.FC = () => {
               />
             </div>
 
-            {/* Exemption Approval Status */}
+            {/* Exception Approval Status from Admin */}
             <div className={`p-3 rounded-xl border flex items-center space-x-3 ${
-              sickness.isExempt
+              sickness.status === 'approved'
                 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                : 'bg-rose-950/20 border-rose-500/30 text-rose-200'
+                : sickness.status === 'pending'
+                ? 'bg-amber-950/20 border-amber-500/30 text-amber-200'
+                : sickness.status === 'rejected'
+                ? 'bg-rose-950/20 border-rose-500/30 text-rose-200'
+                : 'bg-white/5 border-white/10 text-slate-300'
             }`}>
-              {sickness.isExempt ? (
+              {sickness.status === 'approved' ? (
                 <>
                   <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
                   <div>
-                    <span className="font-bold text-emerald-300">Exemption Active & Validated</span>
+                    <span className="font-bold text-emerald-300">Admin Approved ✓</span>
                     <p className="text-[11px] text-emerald-200/70">
-                      Medical document on file. 75 Hard streak is protected from reset.
+                      Medical proof verified by Admin. 75 Hard streak is protected from reset.
+                    </p>
+                  </div>
+                </>
+              ) : sickness.status === 'pending' ? (
+                <>
+                  <Hourglass className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
+                  <div>
+                    <span className="font-bold text-amber-300">⏳ Pending Admin Approval</span>
+                    <p className="text-[11px] text-amber-200/70">
+                      Your medical document was submitted. The Admin will review and approve it from the Admin Panel.
+                    </p>
+                  </div>
+                </>
+              ) : sickness.status === 'rejected' ? (
+                <>
+                  <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-rose-300">Exemption Rejected</span>
+                    <p className="text-[11px] text-rose-200/70">
+                      Admin reviewed and rejected this claim. Tasks remain mandatory to avoid streak reset.
                     </p>
                   </div>
                 </>
               ) : (
                 <>
-                  <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                  <AlertCircle className="w-5 h-5 text-slate-400 shrink-0" />
                   <div>
-                    <span className="font-bold text-rose-300">Exemption Inactive</span>
-                    <p className="text-[11px] text-rose-200/70">
-                      You must attach valid medical proof to grant exemption.
+                    <span className="font-bold text-slate-300">Proof Required</span>
+                    <p className="text-[11px] text-slate-400">
+                      Upload your medical document to submit an exemption request to the Admin.
                     </p>
                   </div>
                 </>
               )}
             </div>
+
+            {/* Admin Quick Action Button if Admin is logged in */}
+            {(isAdmin || adminOverrideMode) && sickness.isSick && (
+              <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/40 space-y-2">
+                <span className="font-bold text-purple-300 flex items-center space-x-1.5">
+                  <KeyRound className="w-4 h-4" />
+                  <span>Admin Quick Controls</span>
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => approveException(currentUser.id, currentDate)}
+                    className="py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                  >
+                    Direct Approve ✓
+                  </button>
+                  <button
+                    onClick={() => rejectException(currentUser.id, currentDate)}
+                    className="py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+                  >
+                    Direct Reject ✕
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

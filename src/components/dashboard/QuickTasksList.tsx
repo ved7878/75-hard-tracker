@@ -25,7 +25,7 @@ interface QuickTasksListProps {
 }
 
 export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails }) => {
-  const { currentLog, updateCurrentLog, config, isEditable, isToday } = useChallenge();
+  const { currentLog, updateCurrentLog, config, isEditable, isToday, isAdmin, adminOverrideMode } = useChallenge();
   const { items } = validateDayTasks(currentLog, config);
 
   const taskIcons: Record<keyof TaskState, any> = {
@@ -45,8 +45,10 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
   const toggleTask = (taskId: keyof TaskState, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    if (!isEditable) {
-      alert("🔒 LOCKED: In 75 HARD, you can only make changes to TODAY'S checklist. Historical and future days cannot be altered.");
+    const canEdit = isEditable || isAdmin || adminOverrideMode;
+
+    if (!canEdit) {
+      alert("🔒 LOCKED: In 75 HARD, you can only make changes to TODAY'S checklist. Login as Admin to edit past or future days.");
       return;
     }
 
@@ -152,10 +154,10 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
               <div className="flex items-center space-x-3 min-w-0">
                 <button
                   type="button"
-                  disabled={!isEditable}
+                  disabled={!isEditable && !isAdmin && !adminOverrideMode}
                   onClick={e => toggleTask(item.id, e)}
                   className={`p-1 rounded-lg transition-transform active:scale-90 ${
-                    !isEditable
+                    !isEditable && !isAdmin && !adminOverrideMode
                       ? 'cursor-not-allowed opacity-80'
                       : isDone
                       ? 'text-emerald-400'

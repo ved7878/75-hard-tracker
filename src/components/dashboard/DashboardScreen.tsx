@@ -40,6 +40,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     isToday,
     currentDate,
     setCurrentDate,
+    isAdmin,
+    adminOverrideMode,
   } = useChallenge();
 
   const { completedCount, totalCount, allCompleted } = validateDayTasks(currentLog, config);
@@ -61,15 +63,36 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   return (
     <div className="space-y-4 pb-6">
-      {/* LOCKED NOTICE IF VIEWING NON-TODAY */}
-      {!isToday && (
+      {/* ADMIN OVERRIDE NOTICE IF VIEWING NON-TODAY */}
+      {!isToday && (isAdmin || adminOverrideMode) && (
+        <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-500/50 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+            <div>
+              <span className="font-bold text-purple-300">Admin Override Active ({currentDate})</span>
+              <p className="text-[11px] text-purple-200/80">
+                You have master permissions to edit past/future days for {currentUser.name}.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCurrentDate(formatDate(new Date()))}
+            className="px-2.5 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-[11px] shrink-0 transition-all active:scale-95"
+          >
+            Today
+          </button>
+        </div>
+      )}
+
+      {/* LOCKED NOTICE IF VIEWING NON-TODAY WITHOUT ADMIN */}
+      {!isToday && !isAdmin && !adminOverrideMode && (
         <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2">
             <Lock className="w-4 h-4 text-amber-400 shrink-0" />
             <div>
               <span className="font-bold text-amber-300">Viewing Historical/Future Log</span>
               <p className="text-[11px] text-amber-200/80">
-                In 75 HARD, changes are restricted to TODAY only.
+                In 75 HARD, changes are restricted to TODAY only. Login as Admin to override.
               </p>
             </div>
           </div>

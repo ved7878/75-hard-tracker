@@ -24,7 +24,7 @@ interface CalendarScreenProps {
 }
 
 export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate }) => {
-  const { logs, config, currentDate, setCurrentDate } = useChallenge();
+  const { logs, config, currentDate, setCurrentDate, isAdmin, adminOverrideMode } = useChallenge();
   const [selectedDayLog, setSelectedDayLog] = useState<DailyLog | null>(null);
 
   // Generate all 75 days based on config
@@ -89,6 +89,12 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate
     <div className="space-y-4 pb-8">
       {/* Header Info */}
       <div className="p-4 rounded-xl glass-card border border-white/[0.08]">
+        {(isAdmin || adminOverrideMode) && (
+          <div className="mb-2 px-2.5 py-1 rounded-md bg-purple-950/40 border border-purple-500/40 text-[11px] text-purple-300 font-bold flex items-center justify-between">
+            <span>⚡ Admin Override Active: You can edit ANY day!</span>
+            <span className="text-[10px] bg-purple-500/20 px-1 rounded">MASTER ACCESS</span>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-2">
           <div>
             <h2 className="text-base font-extrabold text-white">75-Day Challenge Matrix</h2>

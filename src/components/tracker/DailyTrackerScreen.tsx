@@ -49,6 +49,8 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
     currentDate,
     setCurrentDate,
     currentUser,
+    isAdmin,
+    adminOverrideMode,
   } = useChallenge();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,8 +109,29 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
 
   return (
     <div className="space-y-4 pb-8">
-      {/* LOCKED PAST/FUTURE DAY NOTICE */}
-      {!isEditable && (
+      {/* ADMIN OVERRIDE BANNER */}
+      {(isAdmin || adminOverrideMode) && !isToday && (
+        <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/50 flex items-center justify-between text-xs text-purple-200">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+            <div>
+              <span className="font-bold text-purple-300">Admin Override Mode Active ({currentDate})</span>
+              <p className="text-[11px] text-purple-200/80">
+                You have master permissions to edit past and future tasks for {currentUser.name}.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCurrentDate(formatDate(new Date()))}
+            className="px-2.5 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] shrink-0"
+          >
+            Today
+          </button>
+        </div>
+      )}
+
+      {/* LOCKED PAST/FUTURE DAY NOTICE FOR STANDARD USERS */}
+      {!isEditable && !isAdmin && !adminOverrideMode && (
         <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2.5">
             <Lock className="w-5 h-5 text-amber-400 shrink-0" />
@@ -117,7 +140,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
                 Read-Only Log ({currentDate})
               </span>
               <p className="text-[11px] text-amber-200/80 leading-tight">
-                75 HARD rules strictly permit editing <strong>TODAY'S</strong> checklist only. Historical data is sealed.
+                75 HARD rules strictly permit editing <strong>TODAY'S</strong> checklist only. Login as Admin to unlock past/future days.
               </p>
             </div>
           </div>

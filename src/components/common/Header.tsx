@@ -1,7 +1,19 @@
-import React from 'react';
-import { Flame, ShieldCheck, AlertTriangle, Calendar, ChevronLeft, ChevronRight, Lock, Users } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Flame,
+  ShieldCheck,
+  AlertTriangle,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+  ShieldAlert,
+  KeyRound,
+  Unlock,
+} from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { formatDate, parseDate, getDayNumber } from '../../services/rulesEngine';
+import { LoginModal } from '../auth/LoginModal';
 
 interface HeaderProps {
   activeTab: string;
@@ -14,13 +26,16 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
     setCurrentDate,
     streakStats,
     config,
-    users,
     currentUser,
     setCurrentUserId,
     squadMembers,
-    isEditable,
     isToday,
+    isAdmin,
+    adminOverrideMode,
+    pendingExceptions,
   } = useChallenge();
+
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const handlePrevDay = () => {
     const cur = parseDate(currentDate);
@@ -50,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-md border-b border-white/[0.08] safe-top px-3 py-2">
       <div className="max-w-md mx-auto space-y-2">
-        {/* Top Line: Brand, User Info, Badges */}
+        {/* Top Line: Brand, User Info, Badges, Login/Admin */}
         <div className="flex items-center justify-between">
           {/* Brand & Active Day */}
           <button
@@ -79,8 +94,30 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
             </div>
           </button>
 
-          {/* Badges: Deposit & Streak */}
+          {/* Badges: Admin Indicator, Deposit, Streak, Login */}
           <div className="flex items-center space-x-1.5">
+            {/* Admin Portal Button */}
+            {isAdmin ? (
+              <button
+                onClick={() => setActiveTab('admin')}
+                className="relative px-2 py-1 rounded-md bg-purple-950/60 text-purple-300 border border-purple-600/50 text-[10px] font-extrabold flex items-center space-x-1 shadow-sm transition-all active:scale-95"
+              >
+                <ShieldAlert className="w-3 h-3 text-purple-400" />
+                <span>ADMIN</span>
+                {pendingExceptions.length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute -top-0.5 -right-0.5" />
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsLoginModalOpen(true)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                title="Switch Profile / Admin Login"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* Deposit Badge */}
             <div
               onClick={() => setActiveTab('analytics')}
@@ -99,7 +136,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               ) : (
                 <>
                   <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                  <span>{config.currencySymbol}{config.depositAmount} Safe</span>
+                  <span>{config.currencySymbol}{config.depositAmount}</span>
                 </>
               )}
             </div>
@@ -150,7 +187,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           })}
         </div>
 
-        {/* Date Navigator Bar */}
+        {/* Date Navigator Bar with Admin Override indication */}
         <div className="pt-1 flex items-center justify-between">
           <button
             onClick={handlePrevDay}
@@ -166,6 +203,8 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               className={`text-xs font-semibold px-2 py-0.5 rounded transition-all flex items-center space-x-1.5 ${
                 isToday
                   ? 'bg-rose-600 text-white shadow-sm'
+                  : adminOverrideMode || isAdmin
+                  ? 'bg-purple-950/60 text-purple-300 border border-purple-500/50'
                   : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
               }`}
             >
@@ -173,6 +212,11 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               <span>{formattedDisplayDate}</span>
               {isToday ? (
                 <span className="text-[10px] bg-white/20 px-1 rounded font-bold">TODAY</span>
+              ) : adminOverrideMode || isAdmin ? (
+                <span className="text-[10px] bg-purple-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
+                  <Unlock className="w-2.5 h-2.5 text-purple-300" />
+                  <span>OVERRIDE EDITABLE</span>
+                </span>
               ) : (
                 <span className="text-[10px] bg-amber-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
                   <Lock className="w-2.5 h-2.5" />
@@ -191,6 +235,13 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           </button>
         </div>
       </div>
+
+      {/* Login / Admin Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccessAdmin={() => setActiveTab('admin')}
+      />
     </header>
   );
 };

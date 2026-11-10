@@ -21,6 +21,8 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   reminderEnabled: true,
   strictResetOnMiss: true,
   lockPastDays: true,
+  adminPin: '7575',
+  requireLogin: false,
   autoSyncSupabase: false,
 };
 
@@ -68,9 +70,11 @@ export function isToday(dateStr: string): boolean {
 
 /**
  * Strictly check if a date is editable:
- * 75 HARD rule: Edits are ONLY allowed for TODAY! Past and future days are locked.
+ * 75 HARD rule: Edits are ONLY allowed for TODAY for challengers!
+ * Admin has override authority to edit past and future days.
  */
-export function isDateEditable(dateStr: string, config: ChallengeConfig = DEFAULT_CONFIG): boolean {
+export function isDateEditable(dateStr: string, config: ChallengeConfig = DEFAULT_CONFIG, isAdmin: boolean = false): boolean {
+  if (isAdmin) return true; // Admin has power override!
   if (!config.lockPastDays) return true;
   return dateStr === formatDate(new Date());
 }
@@ -177,6 +181,7 @@ export function createDefaultLog(
       medicalProofUrl: '',
       doctorNotes: '',
       isExempt: false,
+      status: 'none',
     },
     tasks: createDefaultTasks(config),
     sport: {

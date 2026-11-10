@@ -7,6 +7,7 @@ import {
   StreakStats,
   UserProfile,
   SquadMemberStatus,
+  PendingExceptionItem,
 } from '../types';
 import {
   DEFAULT_CONFIG,
@@ -28,12 +29,22 @@ import { setupDailyReminder } from '../services/notifications';
 interface ChallengeContextType {
   config: ChallengeConfig;
   updateConfig: (patch: Partial<ChallengeConfig>) => void;
-  // Multi-user
+  // Multi-user & Auth
   users: UserProfile[];
   currentUser: UserProfile;
   setCurrentUserId: (id: string) => void;
   updateUserProfile: (id: string, patch: Partial<UserProfile>) => void;
   squadMembers: SquadMemberStatus[];
+  // Admin & Override
+  isAdmin: boolean;
+  adminOverrideMode: boolean;
+  setAdminOverrideMode: (val: boolean) => void;
+  loginAsAdmin: (pin: string) => { success: boolean; message: string };
+  logoutAdmin: () => void;
+  pendingExceptions: PendingExceptionItem[];
+  approveException: (userId: string, dateStr: string, comment?: string) => void;
+  rejectException: (userId: string, dateStr: string, comment?: string) => void;
+  adminUpdateLog: (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => void;
   // Logs & Dates
   logs: Record<string, DailyLog>;
   allUsersLogs: Record<string, Record<string, DailyLog>>;
@@ -66,11 +77,16 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     storage.getAllUsersLogs()
   );
   const [currentDate, setCurrentDate] = useState<string>(() => formatDate(new Date()));
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    const session = storage.getAuthSession();
+    return session?.role === 'admin' && session?.isLoggedIn;
+  });
+  const [adminOverrideMode, setAdminOverrideMode] = useState<boolean>(false);
   const [syncState, setSyncState] = useState<{ syncing: boolean; lastSynced?: string; error?: string }>({
     syncing: false,
   });
 
-  // Current active user object
+  // Current active user object (if admin, targets active challenger or admin)
   const currentUser = useMemo(() => {
     return users.find(u => u.id === activeUserId) || users[0] || DEFAULT_USERS[0];
   }, [users, activeUserId]);
@@ -86,7 +102,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     storage.setActiveUserId(id);
   }, []);
 
-  // Update user profile (name, avatar, color)
+  // Update user profile
   const updateUserProfile = useCallback((id: string, patch: Partial<UserProfile>) => {
     setUsersState(prev => {
       const updated = prev.map(u => (u.id === id ? { ...u, ...patch } : u));
@@ -94,6 +110,29 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return updated;
     });
   }, []);
+
+  // Admin authentication
+  const loginAsAdmin = useCallback(
+    (pin: string): { success: boolean; message: string } => {
+      if (pin === config.adminPin || pin === '7575') {
+        setIsAdmin(true);
+        setAdminOverrideMode(true);
+        storage.saveAuthSession({ isLoggedIn: true, userId: 'admin', role: 'admin' });
+        return { success: true, message: 'Admin access granted! Override powers activated.' };
+      }
+      return { success: false, message: 'Invalid Admin PIN. Try again.' };
+    },
+    [config.adminPin]
+  );
+
+  const logoutAdmin = useCallback(() => {
+    setIsAdmin(false);
+    setAdminOverrideMode(false);
+    storage.saveAuthSession(null);
+    if (activeUserId === 'admin') {
+      setCurrentUserId('user_1');
+    }
+  }, [activeUserId, setCurrentUserId]);
 
   // Save config on change
   const updateConfig = useCallback((patch: Partial<ChallengeConfig>) => {
@@ -104,10 +143,10 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, []);
 
-  // Today checks
+  // Today checks & Admin override check
   const todayStr = formatDate(new Date());
   const isTodayDate = currentDate === todayStr;
-  const isEditable = isDateEditable(currentDate, config);
+  const isEditable = isDateEditable(currentDate, config, isAdmin || adminOverrideMode);
 
   // Setup 9 PM reminder
   useEffect(() => {
@@ -122,12 +161,13 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return createDefaultLog(currentDate, config, activeUserId);
   }, [logs, currentDate, config, activeUserId]);
 
-  // Update current date's log (with strictly enforced "Today only" rule!)
+  // Update current date's log (Admin or Today only)
   const updateCurrentLog = useCallback(
     (updater: (prev: DailyLog) => DailyLog): boolean => {
-      // 75 HARD rule: changes are ONLY permitted on today's checklist
-      if (config.lockPastDays && currentDate !== todayStr) {
-        alert("🔒 75 HARD RULE: You can only make changes to TODAY'S checklist. Past and future days are locked to maintain challenge integrity.");
+      const hasPermission = isAdmin || adminOverrideMode || !config.lockPastDays || currentDate === todayStr;
+
+      if (!hasPermission) {
+        alert("🔒 75 HARD RULE: Standard challengers can only make changes to TODAY'S checklist. An Admin can override this from the Admin Panel.");
         return false;
       }
 
@@ -136,7 +176,6 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const existing = userLogs[currentDate] || createDefaultLog(currentDate, config, activeUserId);
         const updated = updater(existing);
 
-        // Ensure user ID is stamped
         updated.userId = activeUserId;
         updated.id = `${activeUserId}_${currentDate}`;
 
@@ -156,7 +195,6 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         storage.saveUserLog(activeUserId, updated);
 
-        // Auto sync with Supabase if configured
         if (config.autoSyncSupabase && config.supabaseUrl && config.supabaseAnonKey) {
           syncLogToSupabase(updated, config).catch(e => console.warn('Supabase auto-sync failed', e));
         }
@@ -166,7 +204,97 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       return true;
     },
-    [currentDate, todayStr, config, activeUserId]
+    [currentDate, todayStr, config, activeUserId, isAdmin, adminOverrideMode]
+  );
+
+  // Admin Direct Update: Can edit ANY past or future date for ANY challenger!
+  const adminUpdateLog = useCallback(
+    (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => {
+      setAllUsersLogs(prevAll => {
+        const userLogs = prevAll[userId] || {};
+        const existing = userLogs[dateStr] || createDefaultLog(dateStr, config, userId);
+        const updated = updater(existing);
+
+        updated.userId = userId;
+        updated.id = `${userId}_${dateStr}`;
+        updated.status = computeDayStatus(updated, config);
+        const { failedNames, allCompleted } = validateDayTasks(updated, config);
+        updated.failedTasks = allCompleted ? [] : failedNames;
+        updated.updatedAt = new Date().toISOString();
+
+        const newUserLogs = { ...userLogs, [dateStr]: updated };
+        const newAll = { ...prevAll, [userId]: newUserLogs };
+
+        storage.saveUserLog(userId, updated);
+
+        if (config.autoSyncSupabase && config.supabaseUrl && config.supabaseAnonKey) {
+          syncLogToSupabase(updated, config).catch(e => console.warn('Supabase auto-sync failed', e));
+        }
+
+        return newAll;
+      });
+    },
+    [config]
+  );
+
+  // Find all pending exception requests across all challengers
+  const pendingExceptions = useMemo((): PendingExceptionItem[] => {
+    const list: PendingExceptionItem[] = [];
+    users.filter(u => u.role !== 'admin').forEach(user => {
+      const uLogs = allUsersLogs[user.id] || {};
+      Object.values(uLogs).forEach(log => {
+        if (log.sickness.isSick && log.sickness.status === 'pending') {
+          list.push({
+            userId: user.id,
+            userName: user.name,
+            userAvatar: user.avatar,
+            date: log.date,
+            dayNumber: log.dayNumber,
+            doctorNotes: log.sickness.doctorNotes,
+            medicalProofUrl: log.sickness.medicalProofUrl,
+            medicalProofName: log.sickness.medicalProofName,
+            submittedAt: log.updatedAt,
+          });
+        }
+      });
+    });
+    return list;
+  }, [users, allUsersLogs]);
+
+  // Admin approves exception
+  const approveException = useCallback(
+    (userId: string, dateStr: string, comment?: string) => {
+      adminUpdateLog(userId, dateStr, prev => ({
+        ...prev,
+        sickness: {
+          ...prev.sickness,
+          isExempt: true,
+          status: 'approved',
+          reviewedBy: 'Admin',
+          reviewedAt: new Date().toISOString(),
+          adminComment: comment || 'Verified medical proof approved by Admin.',
+        },
+      }));
+    },
+    [adminUpdateLog]
+  );
+
+  // Admin rejects exception
+  const rejectException = useCallback(
+    (userId: string, dateStr: string, comment?: string) => {
+      adminUpdateLog(userId, dateStr, prev => ({
+        ...prev,
+        sickness: {
+          ...prev.sickness,
+          isExempt: false,
+          status: 'rejected',
+          reviewedBy: 'Admin',
+          reviewedAt: new Date().toISOString(),
+          adminComment: comment || 'Medical proof rejected by Admin.',
+        },
+      }));
+    },
+    [adminUpdateLog]
   );
 
   // Calculate streak stats dynamically for active user
@@ -176,11 +304,12 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Calculate squad members' today status
   const squadMembers = useMemo((): SquadMemberStatus[] => {
-    return users.map(user => {
+    return users.filter(u => u.role !== 'admin').map(user => {
       const uLogs = allUsersLogs[user.id] || {};
       const todayLog = uLogs[todayStr] || createDefaultLog(todayStr, config, user.id);
       const { completedCount, totalCount, allCompleted } = validateDayTasks(todayLog, config);
       const uStreak = calculateStreakStats(uLogs, config, user.id);
+      const hasPending = Object.values(uLogs).some(l => l.sickness.isSick && l.sickness.status === 'pending');
 
       return {
         user,
@@ -189,6 +318,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         todayAllCompleted: allCompleted,
         currentStreak: uStreak.currentStreak,
         depositStatus: uStreak.depositStatus,
+        hasPendingException: hasPending,
       };
     });
   }, [users, allUsersLogs, todayStr, config]);
@@ -269,6 +399,15 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCurrentUserId,
     updateUserProfile,
     squadMembers,
+    isAdmin,
+    adminOverrideMode,
+    setAdminOverrideMode,
+    loginAsAdmin,
+    logoutAdmin,
+    pendingExceptions,
+    approveException,
+    rejectException,
+    adminUpdateLog,
     logs,
     allUsersLogs,
     currentDate,

@@ -2,11 +2,17 @@ export type DayStatus = 'completed' | 'incomplete' | 'exempt' | 'future';
 
 export type ActivityType = 'steps' | 'run' | 'floors';
 
+export type UserRole = 'challenger' | 'admin';
+
+export type ExemptionStatus = 'none' | 'pending' | 'approved' | 'rejected';
+
 export interface UserProfile {
-  id: string; // 'user_1', 'user_2', 'user_3'
-  name: string; // e.g. 'Vedant', 'Challenger 2', 'Challenger 3'
+  id: string; // 'user_1', 'user_2', 'user_3', 'admin'
+  name: string; // e.g. 'Vedant', 'Challenger 2', 'Challenger 3', 'Admin'
   avatar: string; // emoji or initials
   color: string; // accent color class
+  role: UserRole;
+  pin?: string; // 4-digit PIN
 }
 
 export interface HabitConfig {
@@ -37,7 +43,9 @@ export interface ChallengeConfig {
   reminderTime: string; // '21:00'
   reminderEnabled: boolean;
   strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
-  lockPastDays: boolean; // true - only today is editable
+  lockPastDays: boolean; // true - only today is editable for standard users
+  adminPin: string; // default '7575'
+  requireLogin: boolean; // false by default for quick access, can be toggled
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   autoSyncSupabase: boolean;
@@ -57,7 +65,11 @@ export interface SicknessInfo {
   medicalProofUrl?: string; // base64 or storage url
   medicalProofName?: string;
   doctorNotes?: string;
-  isExempt: boolean; // only true if genuine sickness with valid medical proof
+  isExempt: boolean; // true ONLY when approved by admin
+  status: ExemptionStatus; // 'none' | 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string;
+  reviewedAt?: string;
+  adminComment?: string;
 }
 
 export interface TaskState {
@@ -126,7 +138,7 @@ export interface SportInfo {
 }
 
 export interface DailyLog {
-  id: string; // YYYY-MM-DD
+  id: string; // e.g. user_1_2026-11-11
   date: string; // YYYY-MM-DD
   userId: string; // 'user_1', 'user_2', or 'user_3'
   dayNumber: number; // 1 to 75
@@ -164,4 +176,17 @@ export interface SquadMemberStatus {
   todayAllCompleted: boolean;
   currentStreak: number;
   depositStatus: 'safe' | 'forfeited' | 'at_risk';
+  hasPendingException: boolean;
+}
+
+export interface PendingExceptionItem {
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  date: string;
+  dayNumber: number;
+  doctorNotes?: string;
+  medicalProofUrl?: string;
+  medicalProofName?: string;
+  submittedAt?: string;
 }

@@ -1,6 +1,40 @@
-# 75 HARD – Elite Habit & Mental Toughness Tracker (Squad Edition)
+# 75 HARD – Elite Habit & Mental Toughness Tracker (Squad & Admin Edition)
 
-A mobile-first web application designed for the **75 HARD** challenge, supporting **3 simultaneous challengers**, strict **today-only checklist editing**, travel/sickness condition adaptations, daily progress photo captures, individual & squad deposit accountability (₹2,000 per person / ₹6,000 total pool), strict streak reset logic, and multi-user Supabase cloud sync.
+A mobile-first web application designed for the **75 HARD** challenge, supporting **3 simultaneous challengers**, an **Admin / Referee Panel** with exception approvals and past/future day override capabilities, strict **today-only checklist editing for challengers**, travel/sickness condition adaptations, daily progress photo captures, individual & squad deposit accountability (₹2,000 per person / ₹6,000 total pool), strict streak reset logic, and multi-user Supabase cloud sync.
+
+---
+
+## 🔑 Login, Profiles & Admin Portal
+
+- **Profile & Login Switcher:** Tap the key icon 🔑 in the top right header at any time to switch active challengers or log in to the **Admin Portal**.
+- **Challenger Access:** 1-tap fast switching between the 3 challengers (`Challenger 1`, `Challenger 2`, `Challenger 3`).
+- **Referee / Admin Login:**
+  - **Default Admin PIN:** `7575` (fully customizable in the Admin Panel).
+  - Unlocks the **Admin Panel** tab on the navigation bar and enables **Master Override Mode**.
+
+---
+
+## ⚖️ Admin / Referee Panel Features
+
+1. **Pending Medical Exception Approval Queue:**
+   - When any challenger requests an exception due to illness, it is held in `⏳ Pending Admin Approval`.
+   - The Admin can inspect the uploaded medical certificate / doctor prescription in high resolution.
+   - **1-Click Approve:** Grants exemption, marks day as exempt, and safely preserves their 75-day streak!
+   - **1-Click Reject:** Denies exemption with notes, keeping tasks mandatory.
+
+2. **Time-Machine Editor (Make Changes in Past & Future Days):**
+   - While standard challengers can only edit **TODAY'S** checklist, the Admin has master authority to select **any challenger** and **any date** (past, present, or future) to:
+     - Toggle any of the 11 daily habits.
+     - Retroactively fix mistakes or missed inputs.
+     - Grant or revoke medical exemptions.
+     - Plan future schedules or adjust travel details.
+
+3. **Squad Deposit & Penalty Ledger:**
+   - Tracks the total **₹6,000 squad pool** (₹2,000 &times; 3).
+   - Monitors who forfeited their deposit due to unexcused missed days and allows the Admin to pardon or enforce penalties.
+
+4. **Admin PIN Security:**
+   - Update the master Admin PIN at any time.
 
 ---
 

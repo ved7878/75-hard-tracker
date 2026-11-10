@@ -6,6 +6,7 @@ import {
   PlaneTakeoff,
   BarChart3,
   Settings,
+  ShieldAlert,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { validateDayTasks } from '../../services/rulesEngine';
@@ -16,11 +17,11 @@ interface BottomNavProps {
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab }) => {
-  const { currentLog, config } = useChallenge();
+  const { currentLog, config, isAdmin, pendingExceptions } = useChallenge();
   const { completedCount, totalCount } = validateDayTasks(currentLog, config);
   const remaining = totalCount - completedCount;
 
-  const navItems = [
+  const baseItems = [
     { id: 'dashboard', label: 'Today', icon: LayoutDashboard },
     {
       id: 'tracker',
@@ -32,7 +33,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     { id: 'calendar', label: '75 Days', icon: CalendarDays },
     {
       id: 'travel',
-      label: 'Rules & Trips',
+      label: 'Rules',
       icon: PlaneTakeoff,
       badge: currentLog.travel.isTravelling ? '!' : null,
       badgeColor: 'bg-amber-500',
@@ -41,10 +42,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
+  if (isAdmin) {
+    baseItems.push({
+      id: 'admin',
+      label: 'Admin',
+      icon: ShieldAlert,
+      badge: pendingExceptions.length > 0 ? pendingExceptions.length : null,
+      badgeColor: 'bg-purple-500',
+    });
+  }
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d0e12]/95 backdrop-blur-lg border-t border-white/[0.08] pb-[env(safe-area-inset-bottom,8px)] pt-1.5 px-2">
-      <div className="max-w-md mx-auto grid grid-cols-6 gap-0.5">
-        {navItems.map(item => {
+      <div className={`max-w-md mx-auto grid gap-0.5 ${isAdmin ? 'grid-cols-7' : 'grid-cols-6'}`}>
+        {baseItems.map(item => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
 
@@ -54,7 +65,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
               onClick={() => setActiveTab(item.id)}
               className={`relative flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg transition-all active:scale-90 ${
                 isActive
-                  ? 'text-rose-500 font-bold'
+                  ? item.id === 'admin'
+                    ? 'text-purple-400 font-bold'
+                    : 'text-rose-500 font-bold'
                   : 'text-slate-400 hover:text-slate-200 font-medium'
               }`}
             >
@@ -72,7 +85,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
                 {item.label}
               </span>
               {isActive && (
-                <div className="w-1 h-1 rounded-full bg-rose-500 mt-0.5 shadow-glow-red" />
+                <div className={`w-1 h-1 rounded-full mt-0.5 shadow-glow-red ${item.id === 'admin' ? 'bg-purple-500' : 'bg-rose-500'}`} />
               )}
             </button>
           );
@@ -81,4 +94,3 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     </nav>
   );
 };
-

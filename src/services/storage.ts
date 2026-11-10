@@ -6,11 +6,13 @@ const USERS_KEY = '75hard_users_list';
 const ACTIVE_USER_KEY = '75hard_active_user_id';
 const LOGS_PREFIX = '75hard_logs_';
 const LEGACY_LOGS_KEY = '75hard_daily_logs';
+const AUTH_SESSION_KEY = '75hard_auth_session';
 
 export const DEFAULT_USERS: UserProfile[] = [
-  { id: 'user_1', name: 'Challenger 1', avatar: '🦁', color: 'from-rose-600 to-rose-700' },
-  { id: 'user_2', name: 'Challenger 2', avatar: '🐺', color: 'from-blue-600 to-indigo-700' },
-  { id: 'user_3', name: 'Challenger 3', avatar: '🦅', color: 'from-amber-500 to-orange-600' },
+  { id: 'user_1', name: 'Challenger 1', avatar: '🦁', color: 'from-rose-600 to-rose-700', role: 'challenger', pin: '1111' },
+  { id: 'user_2', name: 'Challenger 2', avatar: '🐺', color: 'from-blue-600 to-indigo-700', role: 'challenger', pin: '2222' },
+  { id: 'user_3', name: 'Challenger 3', avatar: '🦅', color: 'from-amber-500 to-orange-600', role: 'challenger', pin: '3333' },
+  { id: 'admin', name: 'Admin / Referee', avatar: '⚖️', color: 'from-purple-600 to-indigo-800', role: 'admin', pin: '7575' },
 ];
 
 export const storage = {
@@ -40,6 +42,10 @@ export const storage = {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length >= 3) {
+          // Ensure admin user exists in list
+          if (!parsed.some(u => u.role === 'admin' || u.id === 'admin')) {
+            parsed.push(DEFAULT_USERS[3]);
+          }
           return parsed;
         }
       }
@@ -68,12 +74,10 @@ export const storage = {
 
   getUserLogs(userId: string): Record<string, DailyLog> {
     try {
-      // Check legacy logs if migrating
       if (userId === 'user_1') {
         const legacy = localStorage.getItem(LEGACY_LOGS_KEY);
         if (legacy && !localStorage.getItem(`${LOGS_PREFIX}user_1`)) {
           const parsed = JSON.parse(legacy);
-          // Set userId on each legacy log
           Object.values(parsed).forEach((l: any) => { l.userId = 'user_1'; });
           localStorage.setItem(`${LOGS_PREFIX}user_1`, JSON.stringify(parsed));
           return parsed;
@@ -116,16 +120,36 @@ export const storage = {
     const users = storage.getUsers();
     const result: Record<string, Record<string, DailyLog>> = {};
     users.forEach(u => {
-      result[u.id] = storage.getUserLogs(u.id);
+      if (u.role !== 'admin') {
+        result[u.id] = storage.getUserLogs(u.id);
+      }
     });
     return result;
+  },
+
+  getAuthSession(): { isLoggedIn: boolean; userId: string; role: 'challenger' | 'admin' } | null {
+    try {
+      const stored = localStorage.getItem(AUTH_SESSION_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error('Failed to parse auth session', e);
+    }
+    return null;
+  },
+
+  saveAuthSession(session: { isLoggedIn: boolean; userId: string; role: 'challenger' | 'admin' } | null): void {
+    if (session) {
+      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(AUTH_SESSION_KEY);
+    }
   },
 
   exportBackup(): string {
     const users = storage.getUsers();
     const allLogs = storage.getAllUsersLogs();
     const data = {
-      version: '2.0',
+      version: '3.0',
       exportedAt: new Date().toISOString(),
       config: storage.getConfig(),
       users,
@@ -149,7 +173,6 @@ export const storage = {
           storage.saveUserLogs(uid, logs as Record<string, DailyLog>);
         });
       } else if (parsed.logs) {
-        // legacy import
         storage.saveUserLogs('user_1', parsed.logs);
       }
       return { success: true, message: 'Backup restored successfully!' };
@@ -165,5 +188,6 @@ export const storage = {
     localStorage.removeItem(USERS_KEY);
     localStorage.removeItem(ACTIVE_USER_KEY);
     localStorage.removeItem(LEGACY_LOGS_KEY);
+    localStorage.removeItem(AUTH_SESSION_KEY);
   },
 };
