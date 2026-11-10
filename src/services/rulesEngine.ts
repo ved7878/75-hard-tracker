@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   reminderTime: '21:00',
   reminderEnabled: true,
   strictResetOnMiss: true,
+  lockPastDays: true,
   autoSyncSupabase: false,
 };
 
@@ -62,6 +63,15 @@ export function getDayNumber(dateStr: string, startDateStr: string = DEFAULT_CON
  * Check if dateStr is today's local date
  */
 export function isToday(dateStr: string): boolean {
+  return dateStr === formatDate(new Date());
+}
+
+/**
+ * Strictly check if a date is editable:
+ * 75 HARD rule: Edits are ONLY allowed for TODAY! Past and future days are locked.
+ */
+export function isDateEditable(dateStr: string, config: ChallengeConfig = DEFAULT_CONFIG): boolean {
+  if (!config.lockPastDays) return true;
   return dateStr === formatDate(new Date());
 }
 
@@ -132,9 +142,13 @@ export function createDefaultTasks(config: ChallengeConfig = DEFAULT_CONFIG): Ta
 }
 
 /**
- * Create default log for a specific date
+ * Create default log for a specific date and user
  */
-export function createDefaultLog(dateStr: string, config: ChallengeConfig = DEFAULT_CONFIG): DailyLog {
+export function createDefaultLog(
+  dateStr: string,
+  config: ChallengeConfig = DEFAULT_CONFIG,
+  userId: string = 'user_1'
+): DailyLog {
   const dayNum = getDayNumber(dateStr, config.startDate);
   const todayStr = formatDate(new Date());
   let status: DayStatus = 'future';
@@ -146,8 +160,9 @@ export function createDefaultLog(dateStr: string, config: ChallengeConfig = DEFA
   }
 
   return {
-    id: dateStr,
+    id: `${userId}_${dateStr}`,
     date: dateStr,
+    userId,
     dayNumber: dayNum,
     travel: {
       isTravelling: false,
@@ -173,7 +188,7 @@ export function createDefaultLog(dateStr: string, config: ChallengeConfig = DEFA
     journalNotes: '',
     status,
     failedTasks: [],
-    isLocked: false,
+    isLocked: dateStr < todayStr,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -422,7 +437,8 @@ export function computeDayStatus(log: DailyLog, config: ChallengeConfig): DaySta
  */
 export function calculateStreakStats(
   logs: Record<string, DailyLog>,
-  config: ChallengeConfig = DEFAULT_CONFIG
+  config: ChallengeConfig = DEFAULT_CONFIG,
+  userId: string = 'user_1'
 ): StreakStats {
   const todayStr = formatDate(new Date());
   const startD = parseDate(config.startDate);
@@ -447,7 +463,7 @@ export function calculateStreakStats(
       break;
     }
 
-    const log = logs[dateStr] || createDefaultLog(dateStr, config);
+    const log = logs[dateStr] || createDefaultLog(dateStr, config, userId);
     const status = computeDayStatus(log, config);
 
     if (dateStr === todayStr) {

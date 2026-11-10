@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { ChallengeConfig, DailyLog } from '../types';
+import { ChallengeConfig, DailyLog, UserProfile } from '../types';
 
 let cachedClient: SupabaseClient | null = null;
 let lastUsedUrl: string | null = null;
@@ -31,7 +31,6 @@ export function getSupabaseClient(config?: ChallengeConfig): SupabaseClient | nu
 export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
     const client = createClient(url.trim(), key.trim());
-    // Try to query the daily_logs table or a basic health check
     const { error } = await client.from('daily_logs').select('count', { count: 'exact', head: true });
     if (error && error.code !== 'PGRST116') {
       return { success: false, message: error.message };
@@ -48,7 +47,8 @@ export async function syncLogToSupabase(log: DailyLog, config: ChallengeConfig):
 
   try {
     const { error } = await client.from('daily_logs').upsert({
-      id: log.id,
+      id: `${log.userId || 'user_1'}_${log.date}`,
+      user_id: log.userId || 'user_1',
       date: log.date,
       day_number: log.dayNumber,
       travel: log.travel,
@@ -74,7 +74,7 @@ export async function syncLogToSupabase(log: DailyLog, config: ChallengeConfig):
   }
 }
 
-export async function fetchAllLogsFromSupabase(config: ChallengeConfig): Promise<Record<string, DailyLog> | null> {
+export async function fetchAllLogsFromSupabase(config: ChallengeConfig): Promise<Record<string, Record<string, DailyLog>> | null> {
   const client = getSupabaseClient(config);
   if (!client) return null;
 
@@ -85,11 +85,22 @@ export async function fetchAllLogsFromSupabase(config: ChallengeConfig): Promise
       return null;
     }
 
-    const logsMap: Record<string, DailyLog> = {};
+    const allUsersLogs: Record<string, Record<string, DailyLog>> = {
+      user_1: {},
+      user_2: {},
+      user_3: {},
+    };
+
     for (const row of data) {
-      logsMap[row.date] = {
+      const uId = row.user_id || 'user_1';
+      if (!allUsersLogs[uId]) {
+        allUsersLogs[uId] = {};
+      }
+
+      allUsersLogs[uId][row.date] = {
         id: row.id,
         date: row.date,
+        userId: uId,
         dayNumber: row.day_number,
         travel: row.travel,
         sickness: row.sickness,
@@ -103,32 +114,41 @@ export async function fetchAllLogsFromSupabase(config: ChallengeConfig): Promise
         updatedAt: row.updated_at || new Date().toISOString(),
       };
     }
-    return logsMap;
+    return allUsersLogs;
   } catch (err) {
     console.error('Failed to fetch from Supabase:', err);
     return null;
   }
 }
 
-export async function syncAllLogsToSupabase(logs: Record<string, DailyLog>, config: ChallengeConfig): Promise<number> {
+export async function syncAllUsersLogsToSupabase(
+  allUsersLogs: Record<string, Record<string, DailyLog>>,
+  config: ChallengeConfig
+): Promise<number> {
   const client = getSupabaseClient(config);
   if (!client) return 0;
 
-  const rows = Object.values(logs).map(log => ({
-    id: log.id,
-    date: log.date,
-    day_number: log.dayNumber,
-    travel: log.travel,
-    sickness: log.sickness,
-    tasks: log.tasks,
-    sport: log.sport,
-    journal_notes: log.journalNotes,
-    status: log.status,
-    failed_tasks: log.failedTasks,
-    is_locked: log.isLocked,
-    completed_at: log.completedAt,
-    updated_at: new Date().toISOString(),
-  }));
+  const rows: any[] = [];
+  Object.entries(allUsersLogs).forEach(([uid, userLogs]) => {
+    Object.values(userLogs).forEach(log => {
+      rows.push({
+        id: `${uid}_${log.date}`,
+        user_id: uid,
+        date: log.date,
+        day_number: log.dayNumber,
+        travel: log.travel,
+        sickness: log.sickness,
+        tasks: log.tasks,
+        sport: log.sport,
+        journal_notes: log.journalNotes,
+        status: log.status,
+        failed_tasks: log.failedTasks,
+        is_locked: log.isLocked,
+        completed_at: log.completedAt,
+        updated_at: new Date().toISOString(),
+      });
+    });
+  });
 
   if (rows.length === 0) return 0;
 
@@ -152,13 +172,14 @@ export async function uploadMediaToSupabase(
   file: File | Blob,
   fileName: string,
   bucketName: 'progress-photos' | 'medical-proofs',
-  config: ChallengeConfig
+  config: ChallengeConfig,
+  userId: string = 'user_1'
 ): Promise<string | null> {
   const client = getSupabaseClient(config);
   if (!client) return null;
 
   try {
-    const cleanFileName = `${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, '')}`;
+    const cleanFileName = `${userId}_${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, '')}`;
     const { data, error } = await client.storage
       .from(bucketName)
       .upload(cleanFileName, file, { upsert: true });
@@ -182,12 +203,13 @@ export async function uploadMediaToSupabase(
 /**
  * SQL Schema for easy 1-click execution in Supabase SQL editor
  */
-export const SUPABASE_SETUP_SQL = `-- 75 HARD DATABASE SCHEMA FOR SUPABASE
+export const SUPABASE_SETUP_SQL = `-- 75 HARD DATABASE SCHEMA FOR SUPABASE (MULTI-USER SQUAD)
 -- Run this script in the Supabase SQL Editor (Dashboard > SQL Editor > New query)
 
--- 1. Create table for daily logs
+-- 1. Create table for daily logs with multi-user support
 CREATE TABLE IF NOT EXISTS public.daily_logs (
-    id TEXT PRIMARY KEY, -- YYYY-MM-DD
+    id TEXT PRIMARY KEY, -- e.g. user_1_2026-11-11
+    user_id TEXT NOT NULL DEFAULT 'user_1',
     date DATE NOT NULL,
     day_number INT NOT NULL,
     travel JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -199,13 +221,15 @@ CREATE TABLE IF NOT EXISTS public.daily_logs (
     failed_tasks TEXT[] DEFAULT '{}',
     is_locked BOOLEAN DEFAULT FALSE,
     completed_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT unique_user_day UNIQUE(user_id, date)
 );
 
--- 2. Create table for challenge settings
+-- 2. Create table for challenge settings & squad profiles
 CREATE TABLE IF NOT EXISTS public.challenge_config (
     id TEXT PRIMARY KEY DEFAULT 'current_config',
     config JSONB NOT NULL,
+    users JSONB DEFAULT '[]'::jsonb,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -2,6 +2,13 @@ export type DayStatus = 'completed' | 'incomplete' | 'exempt' | 'future';
 
 export type ActivityType = 'steps' | 'run' | 'floors';
 
+export interface UserProfile {
+  id: string; // 'user_1', 'user_2', 'user_3'
+  name: string; // e.g. 'Vedant', 'Challenger 2', 'Challenger 3'
+  avatar: string; // emoji or initials
+  color: string; // accent color class
+}
+
 export interface HabitConfig {
   id: string;
   name: string;
@@ -14,7 +21,7 @@ export interface ChallengeConfig {
   startDate: string; // YYYY-MM-DD (e.g. '2026-11-11')
   durationDays: number; // 75
   endDate: string; // YYYY-MM-DD (e.g. '2027-01-24')
-  depositAmount: number; // 2000
+  depositAmount: number; // 2000 per user
   currencySymbol: string; // '₹'
   wakeUpTarget: string; // '06:00'
   wakeUpTravelTarget: string; // '08:00'
@@ -30,6 +37,7 @@ export interface ChallengeConfig {
   reminderTime: string; // '21:00'
   reminderEnabled: boolean;
   strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
+  lockPastDays: boolean; // true - only today is editable
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   autoSyncSupabase: boolean;
@@ -120,6 +128,7 @@ export interface SportInfo {
 export interface DailyLog {
   id: string; // YYYY-MM-DD
   date: string; // YYYY-MM-DD
+  userId: string; // 'user_1', 'user_2', or 'user_3'
   dayNumber: number; // 1 to 75
   travel: TravelInfo;
   sickness: SicknessInfo;
@@ -146,4 +155,13 @@ export interface StreakStats {
   totalFailedDays: number;
   completionRate: number; // 0 to 100
   currentDayNumber: number; // day index based on start date
+}
+
+export interface SquadMemberStatus {
+  user: UserProfile;
+  todayCompletedCount: number;
+  todayTotalCount: number;
+  todayAllCompleted: boolean;
+  currentStreak: number;
+  depositStatus: 'safe' | 'forfeited' | 'at_risk';
 }

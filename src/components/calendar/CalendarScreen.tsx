@@ -218,3 +218,4 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate
     </div>
   );
 };
+

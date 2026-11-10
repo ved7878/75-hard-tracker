@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import {
   PlaneTakeoff,
   Clock,
@@ -11,17 +11,32 @@ import {
   Info,
   CheckCircle2,
   XCircle,
+  Lock,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
+import { formatDate } from '../../services/rulesEngine';
 
 export const TravelSicknessScreen: React.FC = () => {
-  const { currentLog, updateCurrentLog, config } = useChallenge();
-  const medicalProofInputRef = useRef<HTMLInputElement>(null);
+  const {
+    currentLog,
+    updateCurrentLog,
+    config,
+    isEditable,
+    isToday,
+    currentDate,
+    setCurrentDate,
+    currentUser,
+  } = useChallenge();
 
+  const medicalProofInputRef = useRef<HTMLInputElement>(null);
   const { travel, sickness } = currentLog;
   const isTravelLong = travel.isTravelling && travel.hours > config.travelThresholdHours;
 
   const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isEditable) {
+      alert("🔒 LOCKED: You can only upload medical proof for TODAY'S checklist.");
+      return;
+    }
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -45,11 +60,37 @@ export const TravelSicknessScreen: React.FC = () => {
 
   return (
     <div className="space-y-5 pb-8">
+      {/* LOCKED NOTICE IF VIEWING NON-TODAY */}
+      {!isEditable && (
+        <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2.5">
+            <Lock className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold text-amber-300">
+                Read-Only Rules View ({currentDate})
+              </span>
+              <p className="text-[11px] text-amber-200/80 leading-tight">
+                Travel & sickness conditions can only be claimed for <strong>TODAY</strong>.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCurrentDate(formatDate(new Date()))}
+            className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] shrink-0 transition-all active:scale-95"
+          >
+            Go to Today
+          </button>
+        </div>
+      )}
+
       {/* Page Title */}
       <div>
-        <h2 className="text-base font-extrabold text-white">Travel & Sickness Exceptions</h2>
-        <p className="text-xs text-slate-400">
-          Rules dynamically adapt based on travel duration and verified medical necessity.
+        <div className="flex items-center space-x-2">
+          <span className="text-sm">{currentUser.avatar}</span>
+          <h2 className="text-base font-extrabold text-white">Travel & Sickness ({currentUser.name})</h2>
+        </div>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Dynamic adjustments apply for today's active schedule.
         </p>
       </div>
 
@@ -69,6 +110,7 @@ export const TravelSicknessScreen: React.FC = () => {
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
+              disabled={!isEditable}
               checked={travel.isTravelling}
               onChange={e => {
                 const checked = e.target.checked;
@@ -83,7 +125,7 @@ export const TravelSicknessScreen: React.FC = () => {
               }}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500 peer-disabled:opacity-50"></div>
           </label>
         </div>
 
@@ -103,6 +145,7 @@ export const TravelSicknessScreen: React.FC = () => {
                 min="1"
                 max="18"
                 step="0.5"
+                disabled={!isEditable}
                 value={travel.hours}
                 onChange={e => {
                   const hrs = parseFloat(e.target.value);
@@ -111,7 +154,7 @@ export const TravelSicknessScreen: React.FC = () => {
                     travel: { ...prev.travel, hours: hrs },
                   }));
                 }}
-                className="w-full accent-amber-500 cursor-pointer"
+                className="w-full accent-amber-500 cursor-pointer disabled:opacity-50"
               />
               <div className="flex justify-between text-[10px] text-slate-500">
                 <span>1 hr</span>
@@ -154,6 +197,7 @@ export const TravelSicknessScreen: React.FC = () => {
                 <div className="flex items-center space-x-1.5">
                   <button
                     type="button"
+                    disabled={!isEditable}
                     onClick={() => updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, gymAvailable: true } }))}
                     className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
                       travel.gymAvailable ? 'bg-emerald-600 text-white' : 'bg-white/5 text-slate-400'
@@ -163,6 +207,7 @@ export const TravelSicknessScreen: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    disabled={!isEditable}
                     onClick={() => updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, gymAvailable: false } }))}
                     className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
                       !travel.gymAvailable ? 'bg-rose-600 text-white' : 'bg-white/5 text-slate-400'
@@ -190,10 +235,11 @@ export const TravelSicknessScreen: React.FC = () => {
             {/* Destination notes */}
             <input
               type="text"
+              disabled={!isEditable}
               placeholder="Destination / Flight / Hotel notes..."
               value={travel.destination || ''}
               onChange={e => updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, destination: e.target.value } }))}
-              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 disabled:opacity-60"
             />
           </div>
         )}
@@ -215,6 +261,7 @@ export const TravelSicknessScreen: React.FC = () => {
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
+              disabled={!isEditable}
               checked={sickness.isSick}
               onChange={e => {
                 const checked = e.target.checked;
@@ -229,7 +276,7 @@ export const TravelSicknessScreen: React.FC = () => {
               }}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
           </label>
         </div>
 
@@ -262,19 +309,26 @@ export const TravelSicknessScreen: React.FC = () => {
                       {sickness.medicalProofName || 'Prescription_Proof.jpg'}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => medicalProofInputRef.current?.click()}
-                    className="text-[11px] font-bold text-blue-400 hover:underline shrink-0"
-                  >
-                    Change
-                  </button>
+                  {isEditable && (
+                    <button
+                      type="button"
+                      onClick={() => medicalProofInputRef.current?.click()}
+                      className="text-[11px] font-bold text-blue-400 hover:underline shrink-0"
+                    >
+                      Change
+                    </button>
+                  )}
                 </div>
               ) : (
                 <button
                   type="button"
+                  disabled={!isEditable}
                   onClick={() => medicalProofInputRef.current?.click()}
-                  className="w-full py-4 border-2 border-dashed border-blue-500/30 hover:border-blue-500/60 rounded-xl flex flex-col items-center justify-center text-blue-300 hover:text-white transition-all bg-blue-500/5"
+                  className={`w-full py-4 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${
+                    !isEditable
+                      ? 'border-white/5 opacity-50 cursor-not-allowed text-slate-600'
+                      : 'border-blue-500/30 hover:border-blue-500/60 text-blue-300 hover:text-white bg-blue-500/5'
+                  }`}
                 >
                   <Upload className="w-6 h-6 mb-1 text-blue-400" />
                   <span className="text-xs font-bold">Upload Doctor Slip or Rx Image</span>
@@ -296,13 +350,14 @@ export const TravelSicknessScreen: React.FC = () => {
               <span className="font-semibold text-slate-300">Doctor Advice & Diagnosis:</span>
               <textarea
                 rows={2}
+                disabled={!isEditable}
                 placeholder="e.g. Acute viral fever, doctor advised complete bed rest for 2 days..."
                 value={sickness.doctorNotes || ''}
                 onChange={e => updateCurrentLog(prev => ({
                   ...prev,
                   sickness: { ...prev.sickness, doctorNotes: e.target.value },
                 }))}
-                className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
+                className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none disabled:opacity-60"
               />
             </div>
 

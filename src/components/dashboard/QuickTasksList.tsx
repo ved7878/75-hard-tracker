@@ -14,6 +14,7 @@ import {
   HeartPulse,
   Users,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { validateDayTasks, getEffectiveWakeUpTarget } from '../../services/rulesEngine';
@@ -24,7 +25,7 @@ interface QuickTasksListProps {
 }
 
 export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails }) => {
-  const { currentLog, updateCurrentLog, config, celebrateCompletion } = useChallenge();
+  const { currentLog, updateCurrentLog, config, isEditable, isToday } = useChallenge();
   const { items } = validateDayTasks(currentLog, config);
 
   const taskIcons: Record<keyof TaskState, any> = {
@@ -43,6 +44,11 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
 
   const toggleTask = (taskId: keyof TaskState, e: React.MouseEvent) => {
     e.stopPropagation();
+
+    if (!isEditable) {
+      alert("🔒 LOCKED: In 75 HARD, you can only make changes to TODAY'S checklist. Historical and future days cannot be altered.");
+      return;
+    }
 
     updateCurrentLog(prev => {
       const tasks = { ...prev.tasks };
@@ -107,9 +113,18 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-          Daily 11 Habits
-        </h3>
+        <div className="flex items-center space-x-1.5">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Daily 11 Habits
+          </h3>
+          {!isToday && (
+            <span className="text-[10px] text-amber-400 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.2 rounded font-bold flex items-center space-x-0.5">
+              <Lock className="w-2.5 h-2.5" />
+              <span>Read-Only</span>
+            </span>
+          )}
+        </div>
+
         <button
           onClick={() => onOpenDetails()}
           className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center space-x-0.5"
@@ -137,9 +152,14 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
               <div className="flex items-center space-x-3 min-w-0">
                 <button
                   type="button"
+                  disabled={!isEditable}
                   onClick={e => toggleTask(item.id, e)}
                   className={`p-1 rounded-lg transition-transform active:scale-90 ${
-                    isDone ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+                    !isEditable
+                      ? 'cursor-not-allowed opacity-80'
+                      : isDone
+                      ? 'text-emerald-400'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   {isDone ? (
@@ -162,7 +182,10 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
                 </div>
               </div>
 
-              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
+              <div className="flex items-center space-x-1 shrink-0 ml-2 text-slate-400">
+                {!isEditable && <Lock className="w-3 h-3 text-slate-500" />}
+                <ChevronRight className="w-4 h-4" />
+              </div>
             </div>
           );
         })}

@@ -67,3 +67,4 @@ export function setupDailyReminder(reminderTime: string = '21:00', isEnabled: bo
   reminderInterval = setInterval(checkAndNotify, 30000);
   checkAndNotify();
 }
+

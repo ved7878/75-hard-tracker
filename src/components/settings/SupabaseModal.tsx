@@ -76,3 +76,4 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     </div>
   );
 };
+

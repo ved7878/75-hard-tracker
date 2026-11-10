@@ -1,6 +1,24 @@
-# 75 HARD – Elite Habit & Mental Toughness Tracker
+# 75 HARD – Elite Habit & Mental Toughness Tracker (Squad Edition)
 
-A mobile-first web application designed for the **75 HARD** challenge, featuring configurable rules, travel/sickness condition adaptations, daily progress photo captures, deposit accountability (₹2,000), strict streak reset logic, and Supabase cloud sync.
+A mobile-first web application designed for the **75 HARD** challenge, supporting **3 simultaneous challengers**, strict **today-only checklist editing**, travel/sickness condition adaptations, daily progress photo captures, individual & squad deposit accountability (₹2,000 per person / ₹6,000 total pool), strict streak reset logic, and multi-user Supabase cloud sync.
+
+---
+
+## 👥 The 3 Challengers (Squad Mode)
+- Built specifically for 3 friends doing the challenge together.
+- **1-Tap Challenger Switcher:** Switch between challengers instantly from the top bar on any screen.
+- **Independent Tracking:** Each challenger maintains their own daily checklist, progress photos, streaks, resets, and journal.
+- **Squad Accountability Widget:** Live overview showing all 3 challengers' completion status for today (e.g. 11/11, 8/11, 4/11), current streaks, and the shared ₹6,000 deposit pool.
+- **Customizable Profiles:** Rename challengers (e.g. your actual names) and pick custom avatar emojis in **Settings > The 3 Challengers**.
+
+---
+
+## 🔒 Strict "Today-Only" Editing Rule
+- **Zero Backfilling:** You can **only make changes to TODAY'S checklist**.
+- Historical days are sealed in read-only mode so you cannot retroactively complete missed days.
+- Future days cannot be checked in advance.
+- If you miss a task on an active day, that day becomes a failed day and **your streak resets to 0**!
+- *(Configurable in Settings under "Lock Checklist to TODAY Only")*.
 
 ---
 
@@ -110,3 +128,4 @@ The app works **100% offline-first out of the box** using LocalStorage and brows
 3. In your Supabase Dashboard, open **SQL Editor &gt; New Query**, paste the script, and click **Run**.
 4. In **Project Settings &gt; API**, copy your **Project URL** and **anon public key**.
 5. Paste them into the app's **Settings &gt; Supabase Cloud Sync** and click **Test Link** followed by **Push to Cloud**.
+

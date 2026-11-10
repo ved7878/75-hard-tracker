@@ -15,7 +15,7 @@ import {
 import { useChallenge } from '../../context/ChallengeContext';
 
 export const AnalyticsScreen: React.FC = () => {
-  const { logs, config, streakStats } = useChallenge();
+  const { logs, config, streakStats, currentUser } = useChallenge();
 
   // Aggregate stats across all recorded days
   const aggregated = useMemo(() => {
@@ -111,8 +111,11 @@ export const AnalyticsScreen: React.FC = () => {
     <div className="space-y-4 pb-8 text-xs">
       {/* Title */}
       <div>
-        <h2 className="text-base font-extrabold text-white">Performance & Accountability</h2>
-        <p className="text-slate-400">Deep analytics of your 75 HARD mental toughness journey.</p>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm">{currentUser.avatar}</span>
+          <h2 className="text-base font-extrabold text-white">Performance ({currentUser.name})</h2>
+        </div>
+        <p className="text-slate-400 mt-0.5">Deep analytics of your 75 HARD mental toughness journey.</p>
       </div>
 
       {/* Deposit Status Card */}
@@ -303,3 +306,4 @@ export const AnalyticsScreen: React.FC = () => {
     </div>
   );
 };
+

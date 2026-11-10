@@ -18,7 +18,8 @@ import {
   Plus,
   Minus,
   Upload,
-  Image as ImageIcon,
+  Lock,
+  Calendar,
   PlaneTakeoff,
   AlertCircle,
   Sparkles,
@@ -29,6 +30,7 @@ import {
   evaluateGymCompletion,
   evaluatePhysicalActivity,
   validateDayTasks,
+  formatDate,
 } from '../../services/rulesEngine';
 import { TaskState, ActivityType } from '../../types';
 
@@ -36,8 +38,19 @@ interface DailyTrackerScreenProps {
   initialTaskId?: keyof TaskState;
 }
 
-export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialTaskId }) => {
-  const { currentLog, updateCurrentLog, config, celebrateCompletion } = useChallenge();
+export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
+  const {
+    currentLog,
+    updateCurrentLog,
+    config,
+    celebrateCompletion,
+    isEditable,
+    isToday,
+    currentDate,
+    setCurrentDate,
+    currentUser,
+  } = useChallenge();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(currentLog.tasks.progressPhoto.photoUrl || null);
 
@@ -49,6 +62,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
 
   // Photo uploader
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isEditable) {
+      alert("🔒 LOCKED: You can only upload progress photos for TODAY'S checklist.");
+      return;
+    }
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -72,6 +89,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
   };
 
   const updateTaskField = <K extends keyof TaskState>(key: K, data: Partial<TaskState[K]>) => {
+    if (!isEditable) {
+      alert("🔒 LOCKED: In 75 HARD, you can only make changes to TODAY'S checklist.");
+      return;
+    }
     updateCurrentLog(prev => ({
       ...prev,
       tasks: {
@@ -86,12 +107,38 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
 
   return (
     <div className="space-y-4 pb-8">
+      {/* LOCKED PAST/FUTURE DAY NOTICE */}
+      {!isEditable && (
+        <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2.5">
+            <Lock className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold text-amber-300">
+                Read-Only Log ({currentDate})
+              </span>
+              <p className="text-[11px] text-amber-200/80 leading-tight">
+                75 HARD rules strictly permit editing <strong>TODAY'S</strong> checklist only. Historical data is sealed.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCurrentDate(formatDate(new Date()))}
+            className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] shrink-0 transition-all active:scale-95 shadow-sm"
+          >
+            Go to Today
+          </button>
+        </div>
+      )}
+
       {/* Top Completion Header */}
       <div className="rounded-xl glass-card p-3.5 border border-white/[0.08] flex items-center justify-between">
         <div>
-          <h2 className="text-base font-extrabold text-white">Daily Habit Execution</h2>
-          <p className="text-xs text-slate-400">
-            {completedCount} of {totalCount} completed • {allCompleted ? 'Ready to seal!' : 'Keep pushing'}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm">{currentUser.avatar}</span>
+            <h2 className="text-base font-extrabold text-white">{currentUser.name}'s Checklist</h2>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {completedCount} of {totalCount} completed • {allCompleted ? 'Sealed & Victorious!' : isToday ? 'Keep pushing today' : 'Historical record'}
           </p>
         </div>
         {allCompleted && (
@@ -148,9 +195,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('wakeUp', { completed: !tasks.wakeUp.completed })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.wakeUp.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.wakeUp.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.wakeUp.completed ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -161,6 +209,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
           <label className="text-xs text-slate-400">Actual Wake Time:</label>
           <input
             type="time"
+            disabled={!isEditable}
             value={tasks.wakeUp.actualTime || ''}
             onChange={e => {
               const val = e.target.value;
@@ -169,7 +218,9 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                 completed: Boolean(val && val <= effectiveWakeTarget),
               });
             }}
-            className="bg-black/40 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-rose-500"
+            className={`border rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none ${
+              !isEditable ? 'bg-black/20 border-white/5 cursor-not-allowed text-slate-400' : 'bg-black/40 border-white/10 focus:border-rose-500'
+            }`}
           />
           {tasks.wakeUp.actualTime && (
             <span className={`text-[11px] font-semibold ${
@@ -196,9 +247,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('noMasturbation', { completed: !tasks.noMasturbation.completed })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.noMasturbation.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.noMasturbation.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.noMasturbation.completed ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -221,9 +273,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('noSmokingAlcohol', { completed: !tasks.noSmokingAlcohol.completed })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.noSmokingAlcohol.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.noSmokingAlcohol.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.noSmokingAlcohol.completed ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -248,12 +301,13 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('reading', {
               completed: !tasks.reading.completed,
               pagesRead: !tasks.reading.completed ? Math.max(tasks.reading.pagesRead, config.readingMinPages) : tasks.reading.pagesRead,
             })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.reading.completed || tasks.reading.pagesRead >= config.readingMinPages ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.reading.completed || tasks.reading.pagesRead >= config.readingMinPages ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.reading.completed || tasks.reading.pagesRead >= config.readingMinPages ? (
@@ -270,6 +324,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             <span className="text-xs text-slate-400">Pages Read Today:</span>
             <div className="flex items-center space-x-2">
               <button
+                disabled={!isEditable}
                 onClick={() => {
                   const val = Math.max(0, tasks.reading.pagesRead - 1);
                   updateTaskField('reading', {
@@ -277,12 +332,15 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                     completed: val >= config.readingMinPages,
                   });
                 }}
-                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white active:scale-95"
+                className={`w-7 h-7 rounded-lg flex items-center justify-center text-white ${
+                  !isEditable ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 active:scale-95'
+                }`}
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
               <span className="text-sm font-bold text-white w-8 text-center">{tasks.reading.pagesRead}</span>
               <button
+                disabled={!isEditable}
                 onClick={() => {
                   const val = tasks.reading.pagesRead + 1;
                   updateTaskField('reading', {
@@ -290,7 +348,9 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                     completed: val >= config.readingMinPages,
                   });
                 }}
-                className="w-7 h-7 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 flex items-center justify-center text-rose-300 active:scale-95"
+                className={`w-7 h-7 rounded-lg flex items-center justify-center text-rose-300 ${
+                  !isEditable ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-rose-600/30 hover:bg-rose-600/50 active:scale-95'
+                }`}
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -299,17 +359,19 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
 
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="Book Title (e.g. Can't Hurt Me)"
             value={tasks.reading.bookTitle || ''}
             onChange={e => updateTaskField('reading', { bookTitle: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
           />
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="Key takeaway / quote from today's reading..."
             value={tasks.reading.keyTakeaway || ''}
             onChange={e => updateTaskField('reading', { keyTakeaway: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
           />
         </div>
       </div>
@@ -336,9 +398,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('gym', { completed: !tasks.gym.completed })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              gymEval.satisfied ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : gymEval.satisfied ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {gymEval.satisfied ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -354,6 +417,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
+                disabled={!isEditable}
                 onClick={() => updateTaskField('gym', { substituteType: 'steps' })}
                 className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all ${
                   tasks.gym.substituteType === 'steps'
@@ -365,6 +429,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
               </button>
               <button
                 type="button"
+                disabled={!isEditable}
                 onClick={() => updateTaskField('gym', { substituteType: 'run' })}
                 className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all ${
                   tasks.gym.substituteType === 'run'
@@ -379,6 +444,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             <div className="flex items-center space-x-2">
               <input
                 type="number"
+                disabled={!isEditable}
                 placeholder={tasks.gym.substituteType === 'steps' ? 'Steps (min 15000)' : 'KM (min 5.0)'}
                 value={tasks.gym.substituteValue || ''}
                 onChange={e => {
@@ -393,7 +459,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                     isSubstituted: true,
                   });
                 }}
-                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 disabled:opacity-60"
               />
             </div>
           </div>
@@ -401,10 +467,11 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
           <div className="mt-3 pt-3 border-t border-white/[0.05]">
             <input
               type="text"
+              disabled={!isEditable}
               placeholder="Workout notes (e.g. Chest & Triceps, 50 min heavy)..."
               value={tasks.gym.workoutNotes || ''}
               onChange={e => updateTaskField('gym', { workoutNotes: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
             />
           </div>
         )}
@@ -425,9 +492,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('physicalActivity', { completed: !tasks.physicalActivity.completed })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              paEval.satisfied || tasks.physicalActivity.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : paEval.satisfied || tasks.physicalActivity.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {paEval.satisfied || tasks.physicalActivity.completed ? (
@@ -445,6 +513,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
               <button
                 key={type}
                 type="button"
+                disabled={!isEditable}
                 onClick={() => updateTaskField('physicalActivity', { type })}
                 className={`py-1 rounded-lg text-xs font-semibold capitalize border transition-all ${
                   tasks.physicalActivity.type === type
@@ -460,6 +529,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
           <div className="flex items-center space-x-2">
             <input
               type="number"
+              disabled={!isEditable}
               placeholder={`Enter logged ${tasks.physicalActivity.type}...`}
               value={tasks.physicalActivity.value || ''}
               onChange={e => {
@@ -474,7 +544,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                   completed: done,
                 });
               }}
-              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-rose-500"
+              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-rose-500 disabled:opacity-60"
             />
           </div>
         </div>
@@ -495,12 +565,13 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => {
               const next = !tasks.diet.cleanDietChecked;
               updateTaskField('diet', { cleanDietChecked: next, completed: next });
             }}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.diet.cleanDietChecked ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.diet.cleanDietChecked ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.diet.cleanDietChecked ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -510,10 +581,11 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
         <div className="mt-3 pt-3 border-t border-white/[0.05]">
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="Today's meals log (e.g. Oats, Chicken breast, Salad, Nuts)..."
             value={tasks.diet.notes || ''}
             onChange={e => updateTaskField('diet', { notes: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
           />
         </div>
       </div>
@@ -552,24 +624,31 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                 alt="Today Progress"
                 className="w-full h-full object-cover"
               />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-2 right-2 px-2.5 py-1 rounded bg-black/70 hover:bg-black text-[11px] font-bold text-white backdrop-blur flex items-center space-x-1"
-              >
-                <Upload className="w-3 h-3" />
-                <span>Replace</span>
-              </button>
+              {isEditable && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-2 right-2 px-2.5 py-1 rounded bg-black/70 hover:bg-black text-[11px] font-bold text-white backdrop-blur flex items-center space-x-1"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>Replace</span>
+                </button>
+              )}
             </div>
           ) : (
             <button
               type="button"
+              disabled={!isEditable}
               onClick={() => fileInputRef.current?.click()}
-              className="w-full py-4 border-2 border-dashed border-white/15 hover:border-rose-500/50 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all bg-white/[0.02]"
+              className={`w-full py-4 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${
+                !isEditable
+                  ? 'border-white/5 opacity-50 cursor-not-allowed text-slate-600'
+                  : 'border-white/15 hover:border-rose-500/50 text-slate-400 hover:text-white bg-white/[0.02]'
+              }`}
             >
               <Upload className="w-6 h-6 mb-1 text-rose-500" />
               <span className="text-xs font-bold">Snap or Upload Photo</span>
-              <span className="text-[10px] text-slate-500">Camera / Gallery support</span>
+              <span className="text-[10px] text-slate-500">{isEditable ? 'Camera / Gallery support' : 'Locked for historical days'}</span>
             </button>
           )}
 
@@ -599,9 +678,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('learning', { completed: !tasks.learning.completed })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.learning.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.learning.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.learning.completed ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -611,17 +691,19 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
         <div className="mt-3 pt-3 border-t border-white/[0.05] space-y-2">
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="Topic (e.g. Distributed Systems, Public Speaking)..."
             value={tasks.learning.topic || ''}
             onChange={e => updateTaskField('learning', { topic: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
           />
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="What key lesson did you absorb today?..."
             value={tasks.learning.notes || ''}
             onChange={e => updateTaskField('learning', { notes: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
           />
         </div>
       </div>
@@ -641,12 +723,13 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => {
               const next = !tasks.health.mentalHealthMaintained;
               updateTaskField('health', { mentalHealthMaintained: next, completed: next });
             }}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.health.mentalHealthMaintained ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.health.mentalHealthMaintained ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.health.mentalHealthMaintained ? <CheckCircle2 className="w-6 h-6 fill-emerald-500/20" /> : <Circle className="w-6 h-6" />}
@@ -659,16 +742,22 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             <div className="flex items-center space-x-2">
               <button
                 type="button"
+                disabled={!isEditable}
                 onClick={() => updateTaskField('health', { waterLiters: Math.max(0, (tasks.health.waterLiters || 0) - 0.5) })}
-                className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-white active:scale-95"
+                className={`w-6 h-6 rounded flex items-center justify-center text-white ${
+                  !isEditable ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-white/5 active:scale-95'
+                }`}
               >
                 -
               </button>
               <span className="font-bold text-white w-10 text-center">{tasks.health.waterLiters || 0} L</span>
               <button
                 type="button"
+                disabled={!isEditable}
                 onClick={() => updateTaskField('health', { waterLiters: (tasks.health.waterLiters || 0) + 0.5 })}
-                className="w-6 h-6 rounded bg-rose-600/30 flex items-center justify-center text-rose-300 active:scale-95"
+                className={`w-6 h-6 rounded flex items-center justify-center text-rose-300 ${
+                  !isEditable ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-rose-600/30 active:scale-95'
+                }`}
               >
                 +
               </button>
@@ -676,10 +765,11 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
           </div>
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="Mental health check-in notes (e.g. 10m breathwork, calm focus)..."
             value={tasks.health.notes || ''}
             onChange={e => updateTaskField('health', { notes: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 disabled:opacity-60"
           />
         </div>
       </div>
@@ -701,12 +791,13 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             </div>
           </div>
           <button
+            disabled={!isEditable}
             onClick={() => updateTaskField('family', {
               completed: !tasks.family.completed,
               minutes: !tasks.family.completed ? Math.max(tasks.family.minutes, config.familyTargetMinutes) : tasks.family.minutes,
             })}
             className={`p-1.5 rounded-lg transition-transform active:scale-90 ${
-              tasks.family.completed || tasks.family.minutes >= config.familyTargetMinutes ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+              !isEditable ? 'cursor-not-allowed opacity-70' : tasks.family.completed || tasks.family.minutes >= config.familyTargetMinutes ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
             }`}
           >
             {tasks.family.completed || tasks.family.minutes >= config.familyTargetMinutes ? (
@@ -723,22 +814,28 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
             <div className="flex items-center space-x-2">
               <button
                 type="button"
+                disabled={!isEditable}
                 onClick={() => {
                   const m = Math.max(0, tasks.family.minutes - 5);
                   updateTaskField('family', { minutes: m, completed: m >= config.familyTargetMinutes });
                 }}
-                className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-white active:scale-95"
+                className={`w-6 h-6 rounded flex items-center justify-center text-white ${
+                  !isEditable ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-white/5 active:scale-95'
+                }`}
               >
                 -
               </button>
               <span className="font-bold text-white w-12 text-center">{tasks.family.minutes} min</span>
               <button
                 type="button"
+                disabled={!isEditable}
                 onClick={() => {
                   const m = tasks.family.minutes + 5;
                   updateTaskField('family', { minutes: m, completed: m >= config.familyTargetMinutes });
                 }}
-                className="w-6 h-6 rounded bg-rose-600/30 flex items-center justify-center text-rose-300 active:scale-95"
+                className={`w-6 h-6 rounded flex items-center justify-center text-rose-300 ${
+                  !isEditable ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-rose-600/30 active:scale-95'
+                }`}
               >
                 +
               </button>
@@ -767,6 +864,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
         <div className="space-y-2 mt-2">
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="Sport Name (e.g. Boxing, Swimming, Badminton, Football)..."
             value={currentLog.sport?.sportName || ''}
             onChange={e => {
@@ -780,10 +878,11 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                 },
               }));
             }}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 disabled:opacity-60"
           />
           <input
             type="text"
+            disabled={!isEditable}
             placeholder="What skill or metric improved today?..."
             value={currentLog.sport?.improvementNotes || ''}
             onChange={e => {
@@ -796,7 +895,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
                 },
               }));
             }}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 disabled:opacity-60"
           />
         </div>
       </div>
@@ -814,10 +913,11 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ initialT
         </div>
         <textarea
           rows={3}
+          disabled={!isEditable}
           placeholder="How did you fight resistance today? What challenged your discipline?..."
           value={currentLog.journalNotes || ''}
           onChange={e => updateCurrentLog(prev => ({ ...prev, journalNotes: e.target.value }))}
-          className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
+          className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none disabled:opacity-60"
         />
       </div>
     </div>

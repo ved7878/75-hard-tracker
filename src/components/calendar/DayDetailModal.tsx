@@ -7,10 +7,10 @@ import {
   PlaneTakeoff,
   AlertCircle,
   Calendar,
-  ExternalLink,
+  Lock,
 } from 'lucide-react';
 import { DailyLog, ChallengeConfig } from '../../types';
-import { validateDayTasks } from '../../services/rulesEngine';
+import { validateDayTasks, isToday } from '../../services/rulesEngine';
 
 interface DayDetailModalProps {
   log: DailyLog;
@@ -37,6 +37,8 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
     year: 'numeric',
   });
 
+  const isTodayDate = isToday(log.date);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
       <div className="w-full max-w-md bg-[#121318] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
@@ -59,6 +61,12 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
                     Exempt
                   </span>
                 )}
+                {!isTodayDate && (
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-bold flex items-center space-x-0.5">
+                    <Lock className="w-2.5 h-2.5" />
+                    <span>Sealed</span>
+                  </span>
+                )}
               </h3>
               <p className="text-xs text-slate-400">{formattedDate}</p>
             </div>
@@ -73,6 +81,16 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-4 space-y-4 overflow-y-auto flex-1 no-scrollbar text-xs">
+          {/* Lock notice for historical days */}
+          {!isTodayDate && (
+            <div className="p-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 flex items-center space-x-2">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                Historical 75 HARD record. Only today's checklist is editable.
+              </span>
+            </div>
+          )}
+
           {/* Progress summary */}
           <div className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/[0.05]">
             <span className="text-slate-400">Execution Score:</span>
@@ -167,7 +185,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
             className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95"
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>Open in Tracker</span>
+            <span>{isTodayDate ? 'Edit Today in Tracker' : 'View in Tracker'}</span>
           </button>
         </div>
       </div>

@@ -9,9 +9,9 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   Code,
-  ShieldAlert,
+  Users,
+  Lock,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { storage } from '../../services/storage';
@@ -20,13 +20,24 @@ import { sendLocalNotification, requestNotificationPermission } from '../../serv
 import { SupabaseModal } from './SupabaseModal';
 
 export const SettingsScreen: React.FC = () => {
-  const { config, updateConfig, syncState, syncToCloud, pullFromCloud, resetChallenge } = useChallenge();
+  const {
+    config,
+    updateConfig,
+    users,
+    updateUserProfile,
+    currentUser,
+    setCurrentUserId,
+    syncState,
+    syncToCloud,
+    pullFromCloud,
+    resetChallenge,
+  } = useChallenge();
+
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [testingSupabase, setTestingSupabase] = useState(false);
   const [supabaseTestMsg, setSupabaseTestMsg] = useState<{ success?: boolean; text?: string } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Form state for challenge settings
   const handleConfigChange = (key: string, value: any) => {
     updateConfig({ [key]: value });
   };
@@ -61,7 +72,7 @@ export const SettingsScreen: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `75_HARD_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `75_HARD_Squad_backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -85,11 +96,13 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const handleResetChallenge = () => {
-    if (window.confirm('Are you sure you want to completely reset all daily logs and restart 75 HARD? This cannot be undone.')) {
+    if (window.confirm(`Are you sure you want to reset ${currentUser.name}'s logs and restart 75 HARD? This cannot be undone.`)) {
       resetChallenge();
-      alert('Challenge reset to Day 1.');
+      alert(`${currentUser.name}'s logs have been reset to Day 1.`);
     }
   };
+
+  const avatarOptions = ['🦁', '🐺', '🦅', '⚡', '🥊', '🦍', '🥋', '🔥', '⚔️'];
 
   return (
     <div className="space-y-5 pb-8 text-xs">
@@ -97,11 +110,84 @@ export const SettingsScreen: React.FC = () => {
       <div>
         <h2 className="text-base font-extrabold text-white">Config & System Settings</h2>
         <p className="text-slate-400">
-          Fully configure challenge dates, habit thresholds, 9 PM alert, and Supabase cloud sync.
+          Challenger profiles, challenge rules, 9 PM alert, and multi-user Supabase cloud sync.
         </p>
       </div>
 
-      {/* 1. CHALLENGE SCHEDULE & RULES */}
+      {/* 1. MANAGE THE 3 CHALLENGERS */}
+      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
+        <div className="flex items-center space-x-2.5">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-rose-600 to-rose-700 text-white">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white">The 3 Challengers</h3>
+            <p className="text-[11px] text-slate-400">Customize names and avatars for each person</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-2 border-t border-white/[0.06]">
+          {users.map((user, idx) => {
+            const isCurrent = user.id === currentUser.id;
+            return (
+              <div
+                key={user.id}
+                className={`p-3 rounded-xl border transition-all ${
+                  isCurrent ? 'bg-rose-950/30 border-rose-500/40' : 'bg-black/30 border-white/[0.05]'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-white text-xs flex items-center space-x-1.5">
+                    <span>Person {idx + 1}</span>
+                    {isCurrent && (
+                      <span className="text-[9px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-black">
+                        Active Profile
+                      </span>
+                    )}
+                  </span>
+                  {!isCurrent && (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentUserId(user.id)}
+                      className="text-[10px] font-bold text-rose-400 hover:underline"
+                    >
+                      Switch to this user
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 items-center">
+                  <div className="col-span-3">
+                    <input
+                      type="text"
+                      value={user.name}
+                      onChange={e => updateUserProfile(user.id, { name: e.target.value })}
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-rose-500 font-semibold"
+                      placeholder={`Challenger ${idx + 1}`}
+                    />
+                  </div>
+
+                  <div className="col-span-1">
+                    <select
+                      value={user.avatar}
+                      onChange={e => updateUserProfile(user.id, { avatar: e.target.value })}
+                      className="w-full bg-black/50 border border-white/10 rounded-lg p-1.5 text-base text-center text-white focus:outline-none focus:border-rose-500"
+                    >
+                      {avatarOptions.map(emoji => (
+                        <option key={emoji} value={emoji}>
+                          {emoji}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 2. CHALLENGE SCHEDULE & RULES */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
         <div className="flex items-center space-x-2.5">
           <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
@@ -145,7 +231,7 @@ export const SettingsScreen: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-slate-400 font-semibold block mb-1">Deposit Amount (₹):</label>
+            <label className="text-slate-400 font-semibold block mb-1">Deposit Per Person (₹):</label>
             <input
               type="number"
               value={config.depositAmount}
@@ -155,12 +241,34 @@ export const SettingsScreen: React.FC = () => {
           </div>
         </div>
 
+        {/* Lock Non-Today Days Toggle */}
+        <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between">
+          <div className="space-y-0.5 pr-2">
+            <span className="font-bold text-white flex items-center space-x-1.5">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Lock Checklist to TODAY Only</span>
+            </span>
+            <p className="text-[11px] text-slate-400 leading-tight">
+              Enforce 75 HARD honesty: only today's checklist can be edited. Historical days are sealed.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={config.lockPastDays}
+              onChange={e => handleConfigChange('lockPastDays', e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+          </label>
+        </div>
+
         {/* Strict Reset Toggle */}
         <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between">
           <div className="space-y-0.5 pr-2">
-            <span className="font-bold text-white">Strict 75 Hard Reset Rule</span>
+            <span className="font-bold text-white">Strict Streak Reset to 0</span>
             <p className="text-[11px] text-slate-400 leading-tight">
-              Reset streak count to 0 and forfeit ₹{config.depositAmount} if ANY daily task is missed.
+              Reset streak to 0 and forfeit ₹{config.depositAmount} if ANY daily task is missed without medical proof.
             </p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -242,7 +350,7 @@ export const SettingsScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. 9 PM NOTIFICATION REMINDER */}
+      {/* 3. 9 PM NOTIFICATION REMINDER */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -288,7 +396,7 @@ export const SettingsScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. SUPABASE CLOUD SYNC */}
+      {/* 4. SUPABASE CLOUD SYNC */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -296,8 +404,8 @@ export const SettingsScreen: React.FC = () => {
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Supabase Cloud Sync</h3>
-              <p className="text-[11px] text-slate-400">Multi-device real-time PostgreSQL sync</p>
+              <h3 className="text-sm font-bold text-white">Supabase Cloud Sync (Multi-User)</h3>
+              <p className="text-[11px] text-slate-400">Sync all 3 challengers to one PostgreSQL database</p>
             </div>
           </div>
 
@@ -361,14 +469,14 @@ export const SettingsScreen: React.FC = () => {
               disabled={syncState.syncing}
               className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all text-center"
             >
-              {syncState.syncing ? 'Pushing...' : 'Push to Cloud'}
+              {syncState.syncing ? 'Pushing...' : 'Push All'}
             </button>
             <button
               onClick={pullFromCloud}
               disabled={syncState.syncing}
               className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all text-center"
             >
-              {syncState.syncing ? 'Pulling...' : 'Pull Cloud'}
+              {syncState.syncing ? 'Pulling...' : 'Pull All'}
             </button>
           </div>
 
@@ -389,9 +497,9 @@ export const SettingsScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. BACKUP & DANGER ZONE */}
+      {/* 5. BACKUP & DANGER ZONE */}
       <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
-        <h3 className="text-sm font-bold text-white">Data Portability & Reset</h3>
+        <h3 className="text-sm font-bold text-white">Squad Data Portability</h3>
 
         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/[0.06]">
           <button
@@ -399,7 +507,7 @@ export const SettingsScreen: React.FC = () => {
             className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold flex items-center justify-center space-x-1.5 border border-white/10 transition-all active:scale-95"
           >
             <Download className="w-4 h-4 text-rose-400" />
-            <span>Export JSON</span>
+            <span>Export Squad JSON</span>
           </button>
 
           <button
@@ -425,7 +533,7 @@ export const SettingsScreen: React.FC = () => {
             className="w-full p-2.5 rounded-xl bg-rose-950/30 hover:bg-rose-900/50 text-rose-400 font-bold border border-rose-600/30 flex items-center justify-center space-x-2 transition-all active:scale-95"
           >
             <RotateCcw className="w-4 h-4" />
-            <span>Restart 75 HARD (Clear Logs)</span>
+            <span>Restart {currentUser.name}'s Challenge</span>
           </button>
         </div>
       </div>

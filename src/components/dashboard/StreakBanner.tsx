@@ -71,3 +71,4 @@ export const StreakBanner: React.FC<StreakBannerProps> = ({ onGoToTracker }) => 
     </div>
   );
 };
+

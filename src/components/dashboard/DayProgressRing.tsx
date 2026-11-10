@@ -96,3 +96,4 @@ export const DayProgressRing: React.FC<DayProgressRingProps> = ({
     </div>
   );
 };
+
