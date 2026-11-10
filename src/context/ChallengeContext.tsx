@@ -7,6 +7,7 @@ import {
   UserProfile,
   SquadMemberStatus,
   PendingExceptionItem,
+  SquadDepositLedger,
 } from '../types';
 import {
   DEFAULT_CONFIG,
@@ -16,6 +17,7 @@ import {
   computeDayStatus,
   validateDayTasks,
   isDateEditable,
+  calculateSquadDepositLedger,
 } from '../services/rulesEngine';
 import { supabaseService } from '../services/supabaseService';
 import { sound } from '../services/audio';
@@ -62,6 +64,7 @@ interface ChallengeContextType {
   updateCurrentLog: (updater: (prev: DailyLog) => DailyLog) => Promise<boolean>;
   streakStats: StreakStats;
   squadMembers: SquadMemberStatus[];
+  depositLedger: SquadDepositLedger;
   isEditable: boolean;
   isToday: boolean;
   celebrateCompletion: () => void;
@@ -93,6 +96,11 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return allUsersLogs[currentUser.id] || {};
   }, [allUsersLogs, currentUser]);
 
+  // Squad Deposit & Penalty Transfer Ledger
+  const depositLedger = useMemo<SquadDepositLedger>(() => {
+    return calculateSquadDepositLedger(allUsersLogs, users, config);
+  }, [allUsersLogs, users, config]);
+
   // Compute Squad members
   const squadMembers = useMemo<SquadMemberStatus[]>(() => {
     const challengers = users.filter(u => u.role !== 'admin');
@@ -104,6 +112,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const hasPending = Object.values(uLogs).some(
         l => l.sickness?.isSick && l.sickness?.status === 'pending'
       );
+      const balanceInfo = depositLedger.balances[u.id];
 
       return {
         user: u,
@@ -114,9 +123,11 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         depositStatus: streakStats.depositStatus,
         hasPendingException: hasPending,
         depositAmount: u.depositAmount !== undefined ? u.depositAmount : config.depositAmount,
+        currentDeposit: balanceInfo?.currentDeposit ?? (u.depositAmount !== undefined ? u.depositAmount : config.depositAmount),
+        netDepositChange: balanceInfo?.netChange ?? 0,
       };
     });
-  }, [users, allUsersLogs, todayStr, config]);
+  }, [users, allUsersLogs, todayStr, config, depositLedger]);
 
   // Compute Pending Exceptions for Admin Queue
   const pendingExceptions = useMemo<PendingExceptionItem[]>(() => {
@@ -465,6 +476,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updateCurrentLog,
     streakStats,
     squadMembers,
+    depositLedger,
     isEditable,
     isToday: isTodayDate,
     celebrateCompletion,

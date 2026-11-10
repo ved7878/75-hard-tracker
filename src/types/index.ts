@@ -185,6 +185,39 @@ export interface SquadMemberStatus {
   currentStreak: number;
   depositStatus: 'safe' | 'forfeited' | 'at_risk';
   hasPendingException: boolean;
+  depositAmount?: number;
+  currentDeposit?: number;
+  netDepositChange?: number;
+}
+
+export interface SquadDepositTransaction {
+  date: string;
+  dayNumber: number;
+  missers: Array<{ id: string; name: string; avatar: string }>;
+  survivors: Array<{ id: string; name: string; avatar: string }>;
+  deductedPerMisser: number;
+  awardedPerSurvivor: number;
+  totalTransferred: number;
+  description: string;
+}
+
+export interface ChallengerDepositBalance {
+  userId: string;
+  name: string;
+  avatar: string;
+  initialDeposit: number;
+  currentDeposit: number;
+  netChange: number;
+  penaltiesPaid: number;
+  bountiesEarned: number;
+  missCount: number;
+  status: 'safe' | 'deducted' | 'profited';
+}
+
+export interface SquadDepositLedger {
+  balances: Record<string, ChallengerDepositBalance>;
+  transactions: SquadDepositTransaction[];
+  totalPool: number;
 }
 
 export interface PendingExceptionItem {

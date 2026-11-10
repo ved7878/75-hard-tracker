@@ -51,6 +51,7 @@ export const AdminPanelScreen: React.FC = () => {
     setCurrentDate,
     dbSettings,
     updateDbSettings,
+    depositLedger,
   } = useChallenge();
 
   const challengers = users.filter(u => u.role !== 'admin');
@@ -201,8 +202,14 @@ export const AdminPanelScreen: React.FC = () => {
               </div>
 
               <div className="flex items-center space-x-1.5">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                  {config.currencySymbol}{c.depositAmount || config.depositAmount}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                  (depositLedger?.balances[c.id]?.netChange ?? 0) < 0
+                    ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
+                    : (depositLedger?.balances[c.id]?.netChange ?? 0) > 0
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                    : 'bg-white/5 text-slate-300 border-white/10'
+                }`}>
+                  {config.currencySymbol}{(depositLedger?.balances[c.id]?.currentDeposit ?? c.depositAmount ?? 2000).toLocaleString()}
                 </span>
 
                 <button

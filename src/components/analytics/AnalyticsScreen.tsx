@@ -15,7 +15,8 @@ import {
 import { useChallenge } from '../../context/ChallengeContext';
 
 export const AnalyticsScreen: React.FC = () => {
-  const { logs, config, streakStats, currentUser, isAdmin } = useChallenge();
+  const { logs, config, streakStats, currentUser, isAdmin, depositLedger } = useChallenge();
+  const userBalance = currentUser ? depositLedger?.balances[currentUser.id] : null;
 
   // Aggregate stats across all recorded days
   const aggregated = useMemo(() => {
@@ -120,40 +121,69 @@ export const AnalyticsScreen: React.FC = () => {
 
       {/* Deposit Status Card (Challengers Only) */}
       {!isAdmin ? (
-        <div className={`p-4 rounded-2xl border ${
-          streakStats.depositStatus === 'forfeited'
+        <div className={`p-4 rounded-2xl border space-y-3 ${
+          (userBalance?.netChange ?? 0) < 0
             ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+            : (userBalance?.netChange ?? 0) > 0
+            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
             : 'glass-card border-white/[0.08] text-white'
         }`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2.5">
-              <div className={`p-2 rounded-xl ${streakStats.depositStatus === 'forfeited' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                {streakStats.depositStatus === 'forfeited' ? (
+              <div className={`p-2 rounded-xl ${
+                (userBalance?.netChange ?? 0) < 0
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : 'bg-emerald-500/20 text-emerald-400'
+              }`}>
+                {(userBalance?.netChange ?? 0) < 0 ? (
                   <AlertTriangle className="w-5 h-5" />
                 ) : (
                   <ShieldCheck className="w-5 h-5" />
                 )}
               </div>
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Deposit Accountability</span>
-                <h3 className="text-lg font-black tracking-tight">
-                  {config.currencySymbol}{currentUser?.depositAmount !== undefined ? currentUser.depositAmount : config.depositAmount} Deposit
-                </h3>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Deposit Balance</span>
+                <div className="flex items-baseline space-x-2">
+                  <h3 className="text-xl font-black tracking-tight text-white">
+                    {config.currencySymbol}{(userBalance?.currentDeposit ?? config.depositAmount).toLocaleString()}
+                  </h3>
+                  {(userBalance?.netChange ?? 0) !== 0 && (
+                    <span className={`text-xs font-bold ${
+                      (userBalance?.netChange ?? 0) > 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>
+                      {(userBalance?.netChange ?? 0) > 0 ? `(+₹${userBalance?.netChange} Bounty Earned)` : `(-₹${Math.abs(userBalance?.netChange!)} Penalties Paid)`}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-              streakStats.depositStatus === 'forfeited'
+              (userBalance?.netChange ?? 0) < 0
                 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                 : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
             }`}>
-              {streakStats.depositStatus === 'forfeited' ? 'FORFEITED' : 'PROTECTED'}
+              {(userBalance?.netChange ?? 0) < 0 ? 'PENALIZED' : (userBalance?.netChange ?? 0) > 0 ? 'IN PROFIT' : 'PROTECTED'}
             </span>
           </div>
 
-          <p className="mt-2 text-slate-400 leading-relaxed text-[11px]">
-            {streakStats.depositStatus === 'forfeited'
-              ? 'A day had incomplete tasks without an approved medical exemption. Count was reset to 0 in strict 75 Hard style.'
-              : 'Your pledge is completely intact. Continue executing all 11 habits daily to claim victory at Day 75!'}
+          {/* Breakdown Pills */}
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/[0.06] text-center text-[10px]">
+            <div className="p-1.5 rounded-lg bg-black/40 border border-white/[0.05]">
+              <span className="text-slate-400 block font-medium">Initial Pledge</span>
+              <strong className="text-slate-200 text-xs">₹{userBalance?.initialDeposit ?? 2000}</strong>
+            </div>
+            <div className="p-1.5 rounded-lg bg-rose-950/30 border border-rose-500/20">
+              <span className="text-rose-300/70 block font-medium">Penalties (-₹200)</span>
+              <strong className="text-rose-300 text-xs">-₹{userBalance?.penaltiesPaid ?? 0}</strong>
+            </div>
+            <div className="p-1.5 rounded-lg bg-emerald-950/30 border border-emerald-500/20">
+              <span className="text-emerald-300/70 block font-medium">Bounties Won</span>
+              <strong className="text-emerald-300 text-xs">+₹{userBalance?.bountiesEarned ?? 0}</strong>
+            </div>
+          </div>
+
+          <p className="text-slate-400 leading-relaxed text-[10px]">
+            ⚖️ <strong>Penalty Redistribution Rule:</strong> Missing any daily task deducts ₹200 from your deposit, redistributing ₹100 each to the 2 remaining challengers (or ₹400 to the sole survivor if 2 miss). If all miss, no transfers occur.
           </p>
         </div>
       ) : (
@@ -179,6 +209,46 @@ export const AnalyticsScreen: React.FC = () => {
           </p>
         </div>
       )}
+
+      {/* SQUAD PENALTY & BOUNTY TRANSACTION FEED */}
+      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="w-4 h-4 text-amber-400" />
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+              Squad Penalty & Bounty Ledger
+            </h3>
+          </div>
+          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+            Pool: ₹{depositLedger.totalPool.toLocaleString()}
+          </span>
+        </div>
+
+        {depositLedger.transactions.length > 0 ? (
+          <div className="space-y-2">
+            {depositLedger.transactions.map((tx, idx) => (
+              <div
+                key={idx}
+                className="p-2.5 rounded-xl bg-black/40 border border-white/[0.06] text-xs space-y-1"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-300 text-[11px]">Day {tx.dayNumber} ({tx.date})</span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Transferred: ₹{tx.totalTransferred}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-tight">
+                  {tx.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-3 rounded-xl bg-black/30 border border-white/[0.05] text-center text-slate-400 text-[11px]">
+            🛡️ Zero penalties incurred so far! All squad members are in compliance.
+          </div>
+        )}
+      </div>
 
       {/* Streak & Completion Summary */}
       <div className="grid grid-cols-3 gap-2">

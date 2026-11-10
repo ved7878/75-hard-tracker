@@ -99,11 +99,10 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
             {isAdmin && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`relative px-2 py-1 rounded-md text-[10px] font-extrabold flex items-center space-x-1 shadow-sm transition-all active:scale-95 ${
-                  activeTab === 'admin'
+                className={`relative px-2 py-1 rounded-md text-[10px] font-extrabold flex items-center space-x-1 shadow-sm transition-all active:scale-95 ${activeTab === 'admin'
                     ? 'bg-purple-600 text-white shadow-glow-purple'
                     : 'bg-purple-950/60 text-purple-300 border border-purple-600/50'
-                }`}
+                  }`}
               >
                 <ShieldAlert className="w-3 h-3 text-purple-400" />
                 <span>ADMIN</span>
@@ -118,21 +117,23 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               <div
                 onClick={() => setActiveTab('analytics')}
                 className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-bold flex items-center space-x-1 border transition-all ${
-                  streakStats.depositStatus === 'forfeited'
+                  (squadMembers.find(m => m.user.id === currentUser?.id)?.netDepositChange ?? 0) < 0
                     ? 'bg-rose-950/60 text-rose-300 border-rose-700/50'
+                    : (squadMembers.find(m => m.user.id === currentUser?.id)?.netDepositChange ?? 0) > 0
+                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/50 shadow-sm'
                     : 'bg-emerald-950/50 text-emerald-300 border-emerald-700/40'
                 }`}
-                title={`Deposit: ${config.currencySymbol}${config.depositAmount}`}
+                title="Current Deposit Balance"
               >
-                {streakStats.depositStatus === 'forfeited' ? (
+                {(squadMembers.find(m => m.user.id === currentUser?.id)?.netDepositChange ?? 0) < 0 ? (
                   <>
                     <AlertTriangle className="w-3 h-3 text-rose-400" />
-                    <span>Lost {config.currencySymbol}{config.depositAmount}</span>
+                    <span>{config.currencySymbol}{squadMembers.find(m => m.user.id === currentUser?.id)?.currentDeposit ?? config.depositAmount}</span>
                   </>
                 ) : (
                   <>
                     <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                    <span>{config.currencySymbol}{config.depositAmount}</span>
+                    <span>{config.currencySymbol}{squadMembers.find(m => m.user.id === currentUser?.id)?.currentDeposit ?? config.depositAmount}</span>
                   </>
                 )}
               </div>
@@ -171,24 +172,22 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                 <button
                   key={member.user.id}
                   onClick={() => setCurrentUserId(member.user.id)}
-                  className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between min-w-0 ${
-                    isSelected
+                  className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between min-w-0 ${isSelected
                       ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-sm ring-1 ring-white/20'
                       : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.08]'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center space-x-1.5 truncate">
                     <span className="text-sm shrink-0">{member.user.avatar}</span>
                     <span className="truncate text-[11px] font-bold">{member.user.name}</span>
                   </div>
                   <span
-                    className={`text-[9px] px-1 py-0.2 rounded font-black ml-1 shrink-0 ${
-                      member.todayAllCompleted
+                    className={`text-[9px] px-1 py-0.2 rounded font-black ml-1 shrink-0 ${member.todayAllCompleted
                         ? 'bg-emerald-500 text-black font-extrabold'
                         : isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-black/40 text-slate-500'
-                    }`}
+                          ? 'bg-white/20 text-white'
+                          : 'bg-black/40 text-slate-500'
+                      }`}
                   >
                     {member.todayAllCompleted ? '✓' : `${member.todayCompletedCount}/11`}
                   </span>
@@ -211,13 +210,12 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           <div className="flex items-center space-x-2">
             <button
               onClick={handleTodayClick}
-              className={`text-xs font-semibold px-2 py-0.5 rounded transition-all flex items-center space-x-1.5 ${
-                isToday
+              className={`text-xs font-semibold px-2 py-0.5 rounded transition-all flex items-center space-x-1.5 ${isToday
                   ? 'bg-rose-600 text-white shadow-sm'
                   : adminOverrideMode || isAdmin
-                  ? 'bg-purple-950/60 text-purple-300 border border-purple-500/50'
-                  : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
-              }`}
+                    ? 'bg-purple-950/60 text-purple-300 border border-purple-500/50'
+                    : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
+                }`}
             >
               <Calendar className="w-3 h-3" />
               <span>{formattedDisplayDate}</span>

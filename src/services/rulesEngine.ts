@@ -1,4 +1,14 @@
-import { ChallengeConfig, DailyLog, DayStatus, StreakStats, TaskState } from '../types';
+import {
+  ChallengeConfig,
+  DailyLog,
+  DayStatus,
+  StreakStats,
+  TaskState,
+  UserProfile,
+  SquadDepositLedger,
+  SquadDepositTransaction,
+  ChallengerDepositBalance,
+} from '../types';
 
 export const DEFAULT_CONFIG: ChallengeConfig = {
   startDate: '2026-11-11',
@@ -527,5 +537,126 @@ export function calculateStreakStats(
     totalFailedDays,
     completionRate,
     currentDayNumber: currentDayNum,
+  };
+}
+
+/**
+ * Peer-Accountability Deposit Transfer Engine
+ * Rules:
+ * - When 1 person misses any task on a day: ₹200 deducted from them, ₹100 added to each of the 2 survivors.
+ * - When 2 persons miss on a day: ₹200 deducted from each (₹400 total), ₹400 added to the 1 survivor.
+ * - When all miss: don't change anything.
+ * - When none miss: don't change anything.
+ * Total squad pool remains constant (e.g. ₹6,000 for 3 challengers).
+ */
+export function calculateSquadDepositLedger(
+  allUsersLogs: Record<string, Record<string, DailyLog>>,
+  users: UserProfile[],
+  config: ChallengeConfig
+): SquadDepositLedger {
+  const challengers = users.filter(u => u.role !== 'admin');
+  const balances: Record<string, ChallengerDepositBalance> = {};
+  const PENALTY_PER_MISSER = 200;
+
+  challengers.forEach(u => {
+    const init = u.depositAmount !== undefined ? u.depositAmount : config.depositAmount;
+    balances[u.id] = {
+      userId: u.id,
+      name: u.name,
+      avatar: u.avatar,
+      initialDeposit: init,
+      currentDeposit: init,
+      netChange: 0,
+      penaltiesPaid: 0,
+      bountiesEarned: 0,
+      missCount: 0,
+      status: 'safe',
+    };
+  });
+
+  const transactions: SquadDepositTransaction[] = [];
+  const startD = parseDate(config.startDate);
+  const todayStr = formatDate(new Date());
+
+  // Evaluate past days from startDate up to yesterday
+  for (let i = 0; i < config.durationDays; i++) {
+    const d = new Date(startD);
+    d.setDate(d.getDate() + i);
+    const dateStr = formatDate(d);
+
+    // Stop if day is today or in the future
+    if (dateStr >= todayStr) break;
+
+    const missers: Array<{ id: string; name: string; avatar: string }> = [];
+    const survivors: Array<{ id: string; name: string; avatar: string }> = [];
+
+    challengers.forEach(u => {
+      const userLogs = allUsersLogs[u.id] || {};
+      const log = userLogs[dateStr] || createDefaultLog(dateStr, config, u.id);
+      const status = computeDayStatus(log, config);
+
+      if (status === 'completed' || status === 'exempt') {
+        survivors.push({ id: u.id, name: u.name, avatar: u.avatar });
+      } else {
+        missers.push({ id: u.id, name: u.name, avatar: u.avatar });
+      }
+    });
+
+    // When someone misses and someone survives:
+    if (missers.length > 0 && survivors.length > 0 && missers.length < challengers.length) {
+      const totalDeducted = missers.length * PENALTY_PER_MISSER;
+      const awardedPerSurvivor = Math.floor(totalDeducted / survivors.length);
+
+      // Deduct ₹200 from each misser
+      missers.forEach(m => {
+        if (balances[m.id]) {
+          balances[m.id].currentDeposit -= PENALTY_PER_MISSER;
+          balances[m.id].penaltiesPaid += PENALTY_PER_MISSER;
+          balances[m.id].missCount += 1;
+        }
+      });
+
+      // Award to survivors
+      survivors.forEach(s => {
+        if (balances[s.id]) {
+          balances[s.id].currentDeposit += awardedPerSurvivor;
+          balances[s.id].bountiesEarned += awardedPerSurvivor;
+        }
+      });
+
+      const desc =
+        missers.length === 1 && survivors.length === 2
+          ? `${missers[0].name} missed Day ${i + 1}: ₹200 deducted (-₹200) → ₹100 added to ${survivors[0].name} & ₹100 added to ${survivors[1].name}`
+          : missers.length === 2 && survivors.length === 1
+          ? `${missers[0].name} & ${missers[1].name} missed Day ${i + 1}: ₹200 deducted each (-₹400) → ₹400 added to ${survivors[0].name}`
+          : `${missers.map(m => m.name).join(', ')} missed Day ${i + 1}: ₹${totalDeducted} transferred to survivors (+₹${awardedPerSurvivor} each)`;
+
+      transactions.push({
+        date: dateStr,
+        dayNumber: i + 1,
+        missers,
+        survivors,
+        deductedPerMisser: PENALTY_PER_MISSER,
+        awardedPerSurvivor,
+        totalTransferred: totalDeducted,
+        description: desc,
+      });
+    }
+  }
+
+  // Finalize balances
+  let totalPool = 0;
+  Object.values(balances).forEach(b => {
+    b.netChange = b.currentDeposit - b.initialDeposit;
+    if (b.netChange > 0) b.status = 'profited';
+    else if (b.netChange < 0) b.status = 'deducted';
+    else b.status = 'safe';
+    totalPool += b.currentDeposit;
+  });
+
+  return {
+    balances,
+    transactions: transactions.reverse(), // latest first
+    totalPool,
   };
 }

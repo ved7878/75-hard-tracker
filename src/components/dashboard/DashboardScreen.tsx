@@ -151,9 +151,34 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   <Flame className="w-3 h-3 fill-amber-400" />
                   <span>{member.currentStreak}d</span>
                 </div>
+
+                {/* Live Deposit Balance with Peer Transfers */}
+                <div className="mt-1.5 pt-1 border-t border-white/[0.06] text-[10px] font-bold">
+                  <span className={`${
+                    (member.netDepositChange ?? 0) > 0
+                      ? 'text-emerald-400'
+                      : (member.netDepositChange ?? 0) < 0
+                      ? 'text-rose-400'
+                      : 'text-slate-300'
+                  }`}>
+                    {config.currencySymbol}{(member.currentDeposit ?? 2000).toLocaleString()}
+                  </span>
+                  {(member.netDepositChange ?? 0) !== 0 && (
+                    <span className={`block text-[9px] ${
+                      (member.netDepositChange ?? 0) > 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>
+                      {(member.netDepositChange ?? 0) > 0 ? `+₹${member.netDepositChange}` : `-₹${Math.abs(member.netDepositChange!)}`}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Peer Penalty Distribution Rule Info */}
+        <div className="pt-2 border-t border-white/[0.05] flex items-center justify-between text-[10px] text-slate-400">
+          <span>⚖️ Miss 1 task = -₹200 (+₹100 to each remaining 2). If 2 miss = +₹400 to sole survivor.</span>
         </div>
       </div>
 
