@@ -1,0 +1,149 @@
+export type DayStatus = 'completed' | 'incomplete' | 'exempt' | 'future';
+
+export type ActivityType = 'steps' | 'run' | 'floors';
+
+export interface HabitConfig {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  required: boolean;
+}
+
+export interface ChallengeConfig {
+  startDate: string; // YYYY-MM-DD (e.g. '2026-11-11')
+  durationDays: number; // 75
+  endDate: string; // YYYY-MM-DD (e.g. '2027-01-24')
+  depositAmount: number; // 2000
+  currencySymbol: string; // '₹'
+  wakeUpTarget: string; // '06:00'
+  wakeUpTravelTarget: string; // '08:00'
+  travelThresholdHours: number; // 4
+  readingMinPages: number; // 5
+  readingMaxPages: number; // 10
+  stepsTarget: number; // 10000
+  runTargetKm: number; // 3.0
+  floorsTarget: number; // 20
+  travelSubstituteSteps: number; // 15000
+  travelSubstituteRunKm: number; // 5.0
+  familyTargetMinutes: number; // 10
+  reminderTime: string; // '21:00'
+  reminderEnabled: boolean;
+  strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+  autoSyncSupabase: boolean;
+}
+
+export interface TravelInfo {
+  isTravelling: boolean;
+  hours: number;
+  gymAvailable: boolean;
+  destination?: string;
+  notes?: string;
+}
+
+export interface SicknessInfo {
+  isSick: boolean;
+  hasMedicalProof: boolean;
+  medicalProofUrl?: string; // base64 or storage url
+  medicalProofName?: string;
+  doctorNotes?: string;
+  isExempt: boolean; // only true if genuine sickness with valid medical proof
+}
+
+export interface TaskState {
+  wakeUp: {
+    completed: boolean;
+    actualTime?: string;
+    effectiveTarget: string; // '06:00' or '08:00'
+  };
+  noMasturbation: {
+    completed: boolean;
+  };
+  noSmokingAlcohol: {
+    completed: boolean;
+  };
+  reading: {
+    completed: boolean;
+    pagesRead: number;
+    bookTitle?: string;
+    keyTakeaway?: string;
+  };
+  gym: {
+    completed: boolean;
+    isSubstituted?: boolean; // if gym was unavailable on travel > 4h
+    substituteType?: 'steps' | 'run';
+    substituteValue?: number;
+    workoutNotes?: string;
+  };
+  physicalActivity: {
+    completed: boolean;
+    type: ActivityType;
+    value: number; // steps (e.g. 10000), km (e.g. 3.0), or floors (e.g. 20)
+  };
+  diet: {
+    completed: boolean;
+    cleanDietChecked: boolean; // no added sugar, low oil, no junk
+    notes?: string;
+  };
+  progressPhoto: {
+    completed: boolean;
+    photoUrl?: string; // base64 or storage url
+    takenAt?: string;
+  };
+  learning: {
+    completed: boolean;
+    topic?: string;
+    notes?: string;
+  };
+  health: {
+    completed: boolean;
+    waterLiters: number;
+    mentalHealthMaintained: boolean;
+    notes?: string;
+  };
+  family: {
+    completed: boolean;
+    minutes: number;
+    notes?: string;
+  };
+}
+
+export interface SportInfo {
+  participated: boolean;
+  sportName: string;
+  durationMinutes: number;
+  improvementNotes: string;
+}
+
+export interface DailyLog {
+  id: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD
+  dayNumber: number; // 1 to 75
+  travel: TravelInfo;
+  sickness: SicknessInfo;
+  tasks: TaskState;
+  sport: SportInfo;
+  journalNotes: string;
+  status: DayStatus;
+  failedTasks: string[]; // list of tasks that were missed if day passed
+  isLocked: boolean; // locked once day has passed and finalized
+  completedAt?: string;
+  updatedAt: string;
+}
+
+export interface StreakStats {
+  currentStreak: number;
+  longestStreak: number;
+  resetsCount: number;
+  depositStatus: 'safe' | 'forfeited' | 'at_risk';
+  depositForfeitedAmount: number;
+  depositProtectedAmount: number;
+  lastResetDate?: string;
+  totalCompletedDays: number;
+  totalExemptDays: number;
+  totalFailedDays: number;
+  completionRate: number; // 0 to 100
+  currentDayNumber: number; // day index based on start date
+}
