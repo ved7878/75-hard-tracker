@@ -9,10 +9,10 @@ const LEGACY_LOGS_KEY = '75hard_daily_logs';
 const AUTH_SESSION_KEY = '75hard_auth_session';
 
 export const DEFAULT_USERS: UserProfile[] = [
-  { id: 'user_1', name: 'Challenger 1', avatar: '🦁', color: 'from-rose-600 to-rose-700', role: 'challenger', pin: '1111' },
-  { id: 'user_2', name: 'Challenger 2', avatar: '🐺', color: 'from-blue-600 to-indigo-700', role: 'challenger', pin: '2222' },
-  { id: 'user_3', name: 'Challenger 3', avatar: '🦅', color: 'from-amber-500 to-orange-600', role: 'challenger', pin: '3333' },
-  { id: 'admin', name: 'Admin / Referee', avatar: '⚖️', color: 'from-purple-600 to-indigo-800', role: 'admin', pin: '7575' },
+  { id: 'user_1', username: 'vedant', name: 'Vedant', avatar: '🦁', color: 'from-rose-600 to-rose-700', role: 'challenger', pin: '1111' },
+  { id: 'user_2', username: 'vedansh', name: 'Vedansh', avatar: '🐺', color: 'from-blue-600 to-indigo-700', role: 'challenger', pin: '2222' },
+  { id: 'user_3', username: 'aryaman', name: 'Aryaman', avatar: '🦅', color: 'from-amber-500 to-orange-600', role: 'challenger', pin: '3333' },
+  { id: 'admin', username: 'admin', name: 'Admin / Referee', avatar: '⚖️', color: 'from-purple-600 to-indigo-800', role: 'admin', pin: '7575' },
 ];
 
 export const storage = {

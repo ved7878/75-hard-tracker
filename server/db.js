@@ -37,8 +37,8 @@ export const DEFAULT_CONFIG = {
 export const DEFAULT_USERS = [
   {
     id: 'user_1',
-    username: 'challenger1',
-    name: 'Challenger 1',
+    username: 'vedant',
+    name: 'Vedant',
     pin: '1111',
     avatar: '🦁',
     color: 'from-rose-600 to-rose-700',
@@ -48,8 +48,8 @@ export const DEFAULT_USERS = [
   },
   {
     id: 'user_2',
-    username: 'challenger2',
-    name: 'Challenger 2',
+    username: 'vedansh',
+    name: 'Vedansh',
     pin: '2222',
     avatar: '🐺',
     color: 'from-blue-600 to-indigo-700',
@@ -59,8 +59,8 @@ export const DEFAULT_USERS = [
   },
   {
     id: 'user_3',
-    username: 'challenger3',
-    name: 'Challenger 3',
+    username: 'aryaman',
+    name: 'Aryaman',
     pin: '3333',
     avatar: '🦅',
     color: 'from-amber-500 to-orange-600',
