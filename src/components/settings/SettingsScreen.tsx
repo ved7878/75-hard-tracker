@@ -11,10 +11,13 @@ import {
   UserCheck,
   Flame,
   CheckCircle,
+  KeyRound,
+  Lock,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { sendLocalNotification, requestNotificationPermission } from '../../services/notifications';
 import { sound } from '../../services/audio';
+import { supabaseService } from '../../services/supabaseService';
 
 export const SettingsScreen: React.FC = () => {
   const { config, updateConfig, currentUser, isAdmin, logout } = useChallenge();
@@ -72,6 +75,37 @@ export const SettingsScreen: React.FC = () => {
           <span>Log Out</span>
         </button>
       </div>
+
+      {/* Account Security Card */}
+      {currentUser && (
+        <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
+          <div className="flex items-center space-x-2">
+            <KeyRound className="w-4 h-4 text-amber-400" />
+            <h3 className="font-bold text-white text-xs uppercase tracking-wider">Account Security</h3>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-white/[0.06]">
+            <div>
+              <span className="text-slate-300 font-bold block">Password Protection</span>
+              <span className="text-slate-500 text-[10px]">Update your account login password</span>
+            </div>
+            <button
+              onClick={async () => {
+                const newPass = prompt(`Enter new password for ${currentUser.name}:`);
+                if (newPass && newPass.trim().length >= 4) {
+                  await supabaseService.updateUser(currentUser.id, { password: newPass.trim() });
+                  alert('Password updated successfully!');
+                } else if (newPass !== null) {
+                  alert('Password must be at least 4 characters long.');
+                }
+              }}
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all active:scale-95"
+            >
+              Change Password
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ADMIN PANEL SHORTCUT (IF ADMIN) */}
       {isAdmin && (

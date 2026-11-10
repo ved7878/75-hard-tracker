@@ -16,6 +16,10 @@ import {
   Database,
   Save,
   Clock,
+  Copy,
+  Check,
+  Globe,
+  HelpCircle,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
@@ -25,8 +29,9 @@ import {
   validateDayTasks,
   getDayNumber,
 } from '../../services/rulesEngine';
-import { TaskState } from '../../types';
+import { TaskState, UserProfile } from '../../types';
 import { AddUserModal } from './AddUserModal';
+import { SUPABASE_SETUP_SQL } from '../../services/supabase';
 
 export const AdminPanelScreen: React.FC = () => {
   const {
@@ -37,6 +42,7 @@ export const AdminPanelScreen: React.FC = () => {
     rejectException,
     adminUpdateLog,
     adminDeleteUser,
+    adminResetPassword,
     config,
     updateConfig,
     adminOverrideMode,
@@ -51,6 +57,9 @@ export const AdminPanelScreen: React.FC = () => {
   const [selectedUserId, setSelectedUserId] = useState<string>(challengers[0]?.id || 'user_1');
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [resettingUser, setResettingUser] = useState<UserProfile | null>(null);
+  const [newPasswordVal, setNewPasswordVal] = useState('');
+  const [copiedSql, setCopiedSql] = useState(false);
   const [previewProofUrl, setPreviewProofUrl] = useState<string | null>(null);
 
   // System & Task Config Form State
@@ -181,18 +190,32 @@ export const AdminPanelScreen: React.FC = () => {
                 <span className="text-2xl">{c.avatar}</span>
                 <div>
                   <h4 className="font-bold text-white text-xs">{c.name}</h4>
-                  <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono mt-0.5">
-                    <span>Username: <strong className="text-slate-200">{c.username}</strong></span>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 font-mono mt-0.5">
+                    <span>ID: <strong className="text-slate-200">{c.username}</strong></span>
+                    <span>•</span>
+                    <span>Pass: <strong className="text-rose-300">{c.password || `${c.username}123`}</strong></span>
                     <span>•</span>
                     <span>PIN: <strong className="text-amber-300">{c.pin || '1234'}</strong></span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1.5">
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                  {config.currencySymbol}{c.depositAmount || config.depositAmount} Pledge
+                  {config.currencySymbol}{c.depositAmount || config.depositAmount}
                 </span>
+
+                <button
+                  onClick={() => {
+                    setResettingUser(c);
+                    setNewPasswordVal(`${c.username}2026`);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-amber-950/30 transition-all"
+                  title="Reset Password"
+                >
+                  <KeyRound className="w-4 h-4" />
+                </button>
+
                 <button
                   onClick={() => {
                     if (window.confirm(`Are you sure you want to delete ${c.name}? Their 75 Hard logs will be wiped.`)) {
@@ -577,26 +600,48 @@ export const AdminPanelScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 5. BACKEND DATABASE CONFIGURATION (SUPABASE) */}
-      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
+      {/* 5. DATABASE CONFIGURATION & VERCEL HOSTING */}
+      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Database className="w-4 h-4 text-emerald-400" />
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Backend Database Settings
+              Supabase DB & Vercel Hosting
             </h3>
           </div>
           <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
             dbSettings?.isConnected ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
           }`}>
-            {dbSettings?.isConnected ? 'Supabase Connected' : 'Local JSON Active'}
+            {dbSettings?.isConnected ? 'Cloud Connected' : 'Vercel Hybrid Mode'}
           </span>
         </div>
 
-        <p className="text-slate-400 text-[11px]">
-          Database connections run securely on the Node.js backend. Configure your Supabase credentials here without client exposure.
+        <p className="text-slate-400 text-[11px] leading-relaxed">
+          The app is fully optimized for <strong>Vercel</strong> deployment with <strong>Supabase</strong> PostgreSQL. You can configure Supabase credentials via Vercel Environment Variables or live in the form below.
         </p>
 
+        {/* 1-Click Copy Supabase SQL */}
+        <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-between">
+          <div>
+            <span className="font-bold text-purple-300 text-xs block">1. Supabase SQL Schema Setup</span>
+            <p className="text-[10px] text-purple-200/70">
+              Run this script once in your Supabase SQL Editor to create tables, buckets, and seed data.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+              setCopiedSql(true);
+              setTimeout(() => setCopiedSql(false), 3000);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-[11px] shrink-0 transition-all active:scale-95 flex items-center space-x-1"
+          >
+            {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedSql ? 'Copied SQL!' : 'Copy SQL Schema'}</span>
+          </button>
+        </div>
+
+        {/* Supabase Connection Form */}
         <form onSubmit={handleSaveDbSettings} className="space-y-2.5 pt-1 border-t border-white/[0.06]">
           <div>
             <label className="text-slate-400 block mb-1">Supabase Project URL:</label>
@@ -631,13 +676,82 @@ export const AdminPanelScreen: React.FC = () => {
             disabled={testingDb}
             className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all active:scale-95"
           >
-            {testingDb ? 'Testing Connection...' : 'Save & Link Backend Database'}
+            {testingDb ? 'Testing Connection...' : 'Save & Link Supabase Database'}
           </button>
         </form>
+
+        {/* Vercel Deployment Checklist */}
+        <div className="pt-2 border-t border-white/[0.06] space-y-1.5 text-[11px]">
+          <span className="font-bold text-slate-300 flex items-center space-x-1.5">
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span>Vercel Deployment Checklist</span>
+          </span>
+          <ul className="space-y-1 text-slate-400 pl-4 list-disc text-[10px]">
+            <li>Root contains <code className="text-rose-400">vercel.json</code> configured with SPA rewrites.</li>
+            <li>In Vercel Project Settings &gt; Environment Variables, add <code className="text-emerald-400">VITE_SUPABASE_URL</code> and <code className="text-emerald-400">VITE_SUPABASE_ANON_KEY</code>.</li>
+            <li>Deploy with 1-click on Vercel — zero backend servers to keep alive!</li>
+          </ul>
+        </div>
       </div>
 
       {/* Add User Modal */}
       <AddUserModal isOpen={isAddUserOpen} onClose={() => setIsAddUserOpen(false)} />
+
+      {/* Admin Reset Password Modal */}
+      {resettingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in text-xs">
+          <div className="w-full max-w-sm bg-[#121318] border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 space-y-3.5">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+              <div className="flex items-center space-x-2">
+                <span className="text-xl">{resettingUser.avatar}</span>
+                <div>
+                  <h3 className="font-bold text-white text-xs">Reset Password for {resettingUser.name}</h3>
+                  <p className="text-[10px] text-slate-400">Username: {resettingUser.username}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setResettingUser(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-slate-300 font-bold block text-[11px]">New Password:</label>
+              <input
+                type="text"
+                value={newPasswordVal}
+                onChange={e => setNewPasswordVal(e.target.value)}
+                placeholder="Enter new password"
+                className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setResettingUser(null)}
+                className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!newPasswordVal.trim()) return;
+                  await adminResetPassword(resettingUser.id, newPasswordVal.trim());
+                  alert(`Password for ${resettingUser.name} updated to "${newPasswordVal.trim()}"!`);
+                  setResettingUser(null);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs transition-all active:scale-95"
+              >
+                Save New Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Medical Proof High-Res Modal */}
       {previewProofUrl && (

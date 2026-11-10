@@ -33,6 +33,7 @@ import {
   formatDate,
 } from '../../services/rulesEngine';
 import { TaskState, ActivityType } from '../../types';
+import { supabaseService } from '../../services/supabaseService';
 
 interface DailyTrackerScreenProps {
   initialTaskId?: keyof TaskState;
@@ -71,16 +72,30 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const base64 = reader.result as string;
         setPhotoPreview(base64);
+
+        let finalUrl = base64;
+        try {
+          const cloudUrl = await supabaseService.uploadMedia(
+            file,
+            file.name,
+            'progress-photos',
+            currentUser?.id || 'user_1'
+          );
+          if (cloudUrl) finalUrl = cloudUrl;
+        } catch (err) {
+          console.warn('Fallback to base64 for photo:', err);
+        }
+
         updateCurrentLog(prev => ({
           ...prev,
           tasks: {
             ...prev.tasks,
             progressPhoto: {
               completed: true,
-              photoUrl: base64,
+              photoUrl: finalUrl,
               takenAt: new Date().toISOString(),
             },
           },

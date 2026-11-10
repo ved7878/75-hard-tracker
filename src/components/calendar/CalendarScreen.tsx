@@ -24,8 +24,13 @@ interface CalendarScreenProps {
 }
 
 export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate }) => {
-  const { logs, config, currentDate, setCurrentDate, isAdmin, adminOverrideMode } = useChallenge();
+  const { logs, allUsersLogs, users, currentUser, setCurrentUserId, config, currentDate, setCurrentDate, isAdmin, adminOverrideMode } = useChallenge();
+  const challengers = users.filter(u => u.role !== 'admin');
+  const [viewingUserId, setViewingUserId] = useState<string>(currentUser?.id || 'user_1');
   const [selectedDayLog, setSelectedDayLog] = useState<DailyLog | null>(null);
+
+  const activeLogs = allUsersLogs[viewingUserId] || logs;
+  const viewingUser = users.find(u => u.id === viewingUserId) || currentUser;
 
   // Generate all 75 days based on config
   const daysList = useMemo(() => {
@@ -46,7 +51,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate
       d.setDate(d.getDate() + i);
       const dateStr = formatDate(d);
 
-      const log = logs[dateStr] || createDefaultLog(dateStr, config);
+      const log = activeLogs[dateStr] || createDefaultLog(dateStr, config);
       const status = computeDayStatus(log, config);
       const isTodayDate = dateStr === todayStr;
 
@@ -66,7 +71,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate
     }
 
     return list;
-  }, [logs, config]);
+  }, [activeLogs, config]);
 
   // Aggregate stats
   const stats = useMemo(() => {

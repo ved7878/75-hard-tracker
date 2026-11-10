@@ -9,10 +9,10 @@ const LEGACY_LOGS_KEY = '75hard_daily_logs';
 const AUTH_SESSION_KEY = '75hard_auth_session';
 
 export const DEFAULT_USERS: UserProfile[] = [
-  { id: 'user_1', username: 'vedant', name: 'Vedant', avatar: '🦁', color: 'from-rose-600 to-rose-700', role: 'challenger', pin: '1111' },
-  { id: 'user_2', username: 'vedansh', name: 'Vedansh', avatar: '🐺', color: 'from-blue-600 to-indigo-700', role: 'challenger', pin: '2222' },
-  { id: 'user_3', username: 'aryaman', name: 'Aryaman', avatar: '🦅', color: 'from-amber-500 to-orange-600', role: 'challenger', pin: '3333' },
-  { id: 'admin', username: 'admin', name: 'Admin / Referee', avatar: '⚖️', color: 'from-purple-600 to-indigo-800', role: 'admin', pin: '7575' },
+  { id: 'user_1', username: 'vedant', name: 'Vedant', email: 'vedant@75hard.local', password: 'vedant123', avatar: '🦁', color: 'from-rose-600 to-rose-700', role: 'challenger', pin: '1111', depositAmount: 2000 },
+  { id: 'user_2', username: 'vedansh', name: 'Vedansh', email: 'vedansh@75hard.local', password: 'vedansh123', avatar: '🐺', color: 'from-blue-600 to-indigo-700', role: 'challenger', pin: '2222', depositAmount: 2000 },
+  { id: 'user_3', username: 'aryaman', name: 'Aryaman', email: 'aryaman@75hard.local', password: 'aryaman123', avatar: '🦅', color: 'from-amber-500 to-orange-600', role: 'challenger', pin: '3333', depositAmount: 2000 },
+  { id: 'admin', username: 'admin', name: 'Referee / Admin', email: 'admin@75hard.local', password: 'admin7575', avatar: '⚖️', color: 'from-purple-600 to-indigo-800', role: 'admin', pin: '7575', depositAmount: 0 },
 ];
 
 export const storage = {

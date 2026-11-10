@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { formatDate } from '../../services/rulesEngine';
+import { supabaseService } from '../../services/supabaseService';
 
 export const TravelSicknessScreen: React.FC = () => {
   const {
@@ -47,15 +48,29 @@ export const TravelSicknessScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const base64 = reader.result as string;
+        let finalUrl = base64;
+
+        try {
+          const cloudUrl = await supabaseService.uploadMedia(
+            file,
+            file.name,
+            'medical-proofs',
+            currentUser?.id || 'user_1'
+          );
+          if (cloudUrl) finalUrl = cloudUrl;
+        } catch (err) {
+          console.warn('Fallback to base64 for medical proof:', err);
+        }
+
         updateCurrentLog(prev => ({
           ...prev,
           sickness: {
             ...prev.sickness,
             isSick: true,
             hasMedicalProof: true,
-            medicalProofUrl: base64,
+            medicalProofUrl: finalUrl,
             medicalProofName: file.name,
             // If admin is uploading, auto-approve; otherwise it goes to pending review!
             isExempt: isAdmin || adminOverrideMode,

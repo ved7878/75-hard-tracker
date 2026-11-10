@@ -11,6 +11,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
   const { adminAddUser, config } = useChallenge();
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   const [pin, setPin] = useState('1234');
   const [avatar, setAvatar] = useState('🦁');
   const [depositAmount, setDepositAmount] = useState(config.depositAmount || 2000);
@@ -28,18 +30,24 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
       return;
     }
 
+    const cleanUsername = username.trim().toLowerCase();
+    const finalPassword = password.trim() || `${cleanUsername}123`;
+    const finalPin = pin.trim() || '1234';
+
     setLoading(true);
     const res = await adminAddUser({
       name: name.trim(),
-      username: username.trim().toLowerCase(),
-      pin: pin.trim() || '1234',
+      username: cleanUsername,
+      email: email.trim() || `${cleanUsername}@75hard.local`,
+      password: finalPassword,
+      pin: finalPin,
       avatar,
       depositAmount: Number(depositAmount) || 2000,
     });
     setLoading(false);
 
     if (res.success) {
-      alert(`Challenger "${name}" added successfully! They can now log in using username "${username.toLowerCase()}" and PIN "${pin}".`);
+      alert(`Challenger "${name}" added successfully!\nUsername: ${cleanUsername}\nPassword: ${finalPassword}\nPIN: ${finalPin}`);
       onClose();
     } else {
       setErrorMsg(res.error || 'Failed to add challenger.');
@@ -95,6 +103,16 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
 
           <div className="grid grid-cols-2 gap-2.5">
             <div>
+              <label className="text-slate-300 font-bold block mb-1">Password:</label>
+              <input
+                type="text"
+                placeholder="Default: username123"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-mono text-xs"
+              />
+            </div>
+            <div>
               <label className="text-slate-300 font-bold block mb-1">4-Digit PIN:</label>
               <input
                 type="text"
@@ -106,7 +124,19 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 text-center font-mono tracking-wider font-bold"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label className="text-slate-300 font-bold block mb-1">Email (Optional):</label>
+              <input
+                type="email"
+                placeholder="user@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 text-xs"
+              />
+            </div>
             <div>
               <label className="text-slate-300 font-bold block mb-1">Deposit (₹):</label>
               <input

@@ -10,11 +10,15 @@ export interface UserProfile {
   id: string; // 'user_1', 'user_2', 'user_3', 'admin'
   name: string; // e.g. 'Vedant', 'Challenger 2', 'Challenger 3', 'Admin'
   username?: string;
+  email?: string;
+  password?: string;
   avatar: string; // emoji or initials
   color: string; // accent color class
   role: UserRole;
   pin?: string; // 4-digit PIN
   depositAmount?: number;
+  recoveryAnswer?: string;
+  createdAt?: string;
 }
 
 export interface HabitConfig {
@@ -47,6 +51,8 @@ export interface ChallengeConfig {
   strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
   lockPastDays: boolean; // true - only today is editable for standard users
   adminPin: string; // default '7575'
+  adminPassword?: string; // default 'admin7575'
+  recoveryKey?: string; // default '75hard'
   requireLogin: boolean; // false by default for quick access, can be toggled
   supabaseUrl?: string;
   supabaseAnonKey?: string;

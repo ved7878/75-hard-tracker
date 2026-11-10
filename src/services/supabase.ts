@@ -203,68 +203,85 @@ export async function uploadMediaToSupabase(
 /**
  * SQL Schema for easy 1-click execution in Supabase SQL editor
  */
-export const SUPABASE_SETUP_SQL = `-- 75 HARD DATABASE SCHEMA FOR SUPABASE (MULTI-USER SQUAD)
--- Run this script in the Supabase SQL Editor (Dashboard > SQL Editor > New query)
+export const SUPABASE_SETUP_SQL = `-- ==============================================================================
+-- 75 HARD TRACKER - SUPABASE PRODUCTION DATABASE SCHEMA
+-- Compatible with Vercel & Supabase Architecture
+-- ==============================================================================
 
--- 1. Create table for daily logs with multi-user support
-CREATE TABLE IF NOT EXISTS public.daily_logs (
-    id TEXT PRIMARY KEY, -- e.g. user_1_2026-11-11
-    user_id TEXT NOT NULL DEFAULT 'user_1',
-    date DATE NOT NULL,
-    day_number INT NOT NULL,
-    travel JSONB NOT NULL DEFAULT '{}'::jsonb,
-    sickness JSONB NOT NULL DEFAULT '{}'::jsonb,
-    tasks JSONB NOT NULL DEFAULT '{}'::jsonb,
-    sport JSONB DEFAULT '{}'::jsonb,
-    journal_notes TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'incomplete',
-    failed_tasks TEXT[] DEFAULT '{}',
-    is_locked BOOLEAN DEFAULT FALSE,
-    completed_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT unique_user_day UNIQUE(user_id, date)
-);
-
--- 2. Create table for challenge settings & squad profiles
-CREATE TABLE IF NOT EXISTS public.challenge_config (
-    id TEXT PRIMARY KEY DEFAULT 'current_config',
-    config JSONB NOT NULL,
-    users JSONB DEFAULT '[]'::jsonb,
+-- 1. Create PROFILES / USERS Table
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    password TEXT NOT NULL,
+    pin TEXT DEFAULT '1111',
+    avatar TEXT DEFAULT '🦁',
+    color TEXT DEFAULT 'from-rose-600 to-rose-700',
+    role TEXT NOT NULL DEFAULT 'challenger' CHECK (role IN ('challenger', 'admin')),
+    deposit_amount NUMERIC DEFAULT 2000,
+    recovery_answer TEXT DEFAULT '75hard',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Enable Row Level Security (RLS)
-ALTER TABLE public.daily_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.challenge_config ENABLE ROW LEVEL SECURITY;
+-- 2. Create CHALLENGE_CONFIG Table
+CREATE TABLE IF NOT EXISTS public.challenge_config (
+    id TEXT PRIMARY KEY DEFAULT 'current_config',
+    config JSONB NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 4. Create open access policies for single-user / anon key setup
-CREATE POLICY "Allow anon read daily_logs" ON public.daily_logs FOR SELECT USING (true);
-CREATE POLICY "Allow anon insert daily_logs" ON public.daily_logs FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow anon update daily_logs" ON public.daily_logs FOR UPDATE USING (true);
-CREATE POLICY "Allow anon delete daily_logs" ON public.daily_logs FOR DELETE USING (true);
+-- 3. Create DAILY_LOGS Table
+CREATE TABLE IF NOT EXISTS public.daily_logs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    day_number INT NOT NULL,
+    travel JSONB NOT NULL DEFAULT '{"isTravelling": false, "hours": 0, "gymAvailable": true}'::jsonb,
+    sickness JSONB NOT NULL DEFAULT '{"isSick": false, "hasMedicalProof": false, "isExempt": false, "status": "none"}'::jsonb,
+    tasks JSONB NOT NULL DEFAULT '{}'::jsonb,
+    sport JSONB DEFAULT '{"participated": false, "sportName": "", "durationMinutes": 0, "improvementNotes": ""}'::jsonb,
+    journal_notes TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'incomplete' CHECK (status IN ('completed', 'incomplete', 'exempt', 'future')),
+    failed_tasks TEXT[] DEFAULT '{}',
+    is_locked BOOLEAN DEFAULT FALSE,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT unique_user_date UNIQUE(user_id, date)
+);
+
+-- 4. Enable Row Level Security (RLS)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.challenge_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.daily_logs ENABLE ROW LEVEL SECURITY;
+
+-- 5. Open Access Policies
+CREATE POLICY "Allow anon read profiles" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Allow anon insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow anon update profiles" ON public.profiles FOR UPDATE USING (true);
+CREATE POLICY "Allow anon delete profiles" ON public.profiles FOR DELETE USING (true);
 
 CREATE POLICY "Allow anon read config" ON public.challenge_config FOR SELECT USING (true);
 CREATE POLICY "Allow anon upsert config" ON public.challenge_config FOR ALL USING (true);
 
--- 5. Storage Buckets for Progress Photos and Medical Proofs
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('progress-photos', 'progress-photos', true)
+CREATE POLICY "Allow anon read daily_logs" ON public.daily_logs FOR SELECT USING (true);
+CREATE POLICY "Allow anon upsert daily_logs" ON public.daily_logs FOR ALL USING (true);
+
+-- 6. Storage Buckets (Progress Photos & Medical Proofs)
+INSERT INTO storage.buckets (id, name, public) VALUES ('progress-photos', 'progress-photos', true) ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('medical-proofs', 'medical-proofs', true) ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "Public Access Progress Photos" ON storage.objects FOR ALL USING (bucket_id = 'progress-photos');
+CREATE POLICY "Public Access Medical Proofs" ON storage.objects FOR ALL USING (bucket_id = 'medical-proofs');
+
+-- 7. Seed Default Challenger Accounts & Admin
+INSERT INTO public.profiles (id, username, name, email, password, pin, avatar, color, role, deposit_amount)
+VALUES
+    ('user_1', 'vedant', 'Vedant', 'vedant@75hard.local', 'vedant123', '1111', '🦁', 'from-rose-600 to-rose-700', 'challenger', 2000),
+    ('user_2', 'vedansh', 'Vedansh', 'vedansh@75hard.local', 'vedansh123', '2222', '🐺', 'from-blue-600 to-indigo-700', 'challenger', 2000),
+    ('user_3', 'aryaman', 'Aryaman', 'aryaman@75hard.local', 'aryaman123', '3333', '🦅', 'from-amber-500 to-orange-600', 'challenger', 2000),
+    ('admin', 'admin', 'Referee / Admin', 'admin@75hard.local', 'admin7575', '7575', '⚖️', 'from-purple-600 to-indigo-800', 'admin', 0)
 ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('medical-proofs', 'medical-proofs', true)
-ON CONFLICT (id) DO NOTHING;
-
--- 6. Storage access policies
-CREATE POLICY "Allow public read progress photos" ON storage.objects
-FOR SELECT USING (bucket_id = 'progress-photos');
-
-CREATE POLICY "Allow public upload progress photos" ON storage.objects
-FOR INSERT WITH CHECK (bucket_id = 'progress-photos');
-
-CREATE POLICY "Allow public read medical proofs" ON storage.objects
-FOR SELECT USING (bucket_id = 'medical-proofs');
-
-CREATE POLICY "Allow public upload medical proofs" ON storage.objects
-FOR INSERT WITH CHECK (bucket_id = 'medical-proofs');
 `;
