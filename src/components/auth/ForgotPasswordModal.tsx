@@ -29,8 +29,8 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
   const submit = async () => {
     setMsg(null);
     if (!username.trim()) return setMsg({ ok: false, text: 'Enter your username.' });
-    if (!recoveryKey.trim()) return setMsg({ ok: false, text: 'Enter the recovery key from your referee.' });
-    if (newPassword.length < 4) return setMsg({ ok: false, text: 'New password needs at least 4 characters.' });
+    if (!recoveryKey.trim()) return setMsg({ ok: false, text: 'Enter your recovery answer.' });
+    if (newPassword.length < 6) return setMsg({ ok: false, text: 'New password needs at least 6 characters.' });
     if (newPassword !== confirmPassword) return setMsg({ ok: false, text: "Passwords don't match." });
 
     setLoading(true);
@@ -54,12 +54,35 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
     }
   };
 
+  // Synced squads have no self-service reset (a shared recovery key let anyone take over
+  // any account) – the referee sets a new password from the admin panel.
+  if (supabaseService.isConfigured()) {
+    return (
+      <Sheet
+        open={isOpen}
+        onClose={onClose}
+        title="Forgot your password?"
+        subtitle="Your referee can reset it."
+        footer={
+          <button onClick={onClose} className="btn-primary w-full">
+            Got it
+          </button>
+        }
+      >
+        <p className="text-sm text-zinc-300 leading-relaxed">
+          Ask your referee to open <strong>Admin → Squad</strong> and tap the key icon next to your name to set a
+          new password. Then sign in with it and change it in <strong>More → Change password</strong>.
+        </p>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet
       open={isOpen}
       onClose={onClose}
       title="Reset password"
-      subtitle="Ask your referee for the recovery key."
+      subtitle="Use the recovery answer saved on this device."
       footer={
         <button disabled={loading} onClick={submit} className="btn-primary w-full">
           {loading ? 'Resetting…' : 'Set new password'}
@@ -72,7 +95,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           <input className="input" autoCapitalize="off" value={username} onChange={e => setUsername(e.target.value)} />
         </div>
         <div>
-          <label className="field-label">Recovery key</label>
+          <label className="field-label">Recovery answer</label>
           <input className="input font-mono" autoCapitalize="off" value={recoveryKey} onChange={e => setRecoveryKey(e.target.value)} />
         </div>
         <div>

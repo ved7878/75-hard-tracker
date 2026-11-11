@@ -21,11 +21,13 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
 
   const onToggle = (taskId: keyof TaskState) => {
     // The photo can't be ticked without a photo – take the user to the uploader instead
-    if (
-      (taskId === 'progressPhoto' && !currentLog.tasks.progressPhoto.photoUrl) ||
-      (taskId === 'wakeUp' && isLateWakeUp(currentLog, config))
-    ) {
+    if (taskId === 'progressPhoto' && !currentLog.tasks.progressPhoto.photoUrl) {
       onOpenDetails('progressPhoto');
+      return;
+    }
+    // A late wake-up can't be ticked – open the wake-up card itself, not the photo uploader
+    if (taskId === 'wakeUp' && isLateWakeUp(currentLog, config)) {
+      onOpenDetails('wakeUp');
       return;
     }
     updateCurrentLog(prev => toggleTask(prev, taskId, config));

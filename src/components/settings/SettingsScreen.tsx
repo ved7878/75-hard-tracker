@@ -62,7 +62,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
 
   const savePassword = async () => {
     if (!currentUser) return;
-    if (pw.trim().length < 4) return setPwMsg({ ok: false, text: 'Use at least 4 characters.' });
+    if (pw.trim().length < 6) return setPwMsg({ ok: false, text: 'Use at least 6 characters.' });
     if (pw !== pw2) return setPwMsg({ ok: false, text: "Passwords don't match." });
     const res = await supabaseService.updateUser(currentUser.id, { password: pw.trim() });
     setPwMsg({ ok: res.success, text: res.success ? 'Password updated.' : res.message || 'Could not update password.' });

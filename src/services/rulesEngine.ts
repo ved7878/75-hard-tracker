@@ -34,7 +34,6 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   reminderEnabled: true,
   strictResetOnMiss: true,
   lockPastDays: true,
-  adminPin: '7575',
   requireLogin: false,
   autoSyncSupabase: false,
 };
@@ -97,11 +96,44 @@ export function getEndDate(startDate: string, durationDays: number): string {
  */
 export function normalizeConfig(config: Partial<ChallengeConfig>): ChallengeConfig {
   const merged: ChallengeConfig = { ...DEFAULT_CONFIG, ...config };
+  // Never keep credentials in the rules config: it is readable by everyone and cached on every phone
+  delete merged.adminPin;
+  delete merged.adminPassword;
+  delete merged.recoveryKey;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(merged.startDate || '')) {
     merged.startDate = DEFAULT_CONFIG.startDate;
   }
   merged.durationDays = Number(merged.durationDays) > 0 ? Number(merged.durationDays) : DEFAULT_CONFIG.durationDays;
   merged.endDate = getEndDate(merged.startDate, merged.durationDays);
+
+  // A cleared time box ('') would make the wake-up deadline "NaN:NaN" (always open)
+  (['wakeUpTarget', 'wakeUpTravelTarget', 'reminderTime'] as const).forEach(k => {
+    if (!/^\d{1,2}:\d{2}$/.test(String(merged[k] || ''))) merged[k] = DEFAULT_CONFIG[k];
+  });
+
+  // Targets must be positive numbers – a cleared/0/negative box would let everyone pass
+  (
+    [
+      'readingMinPages',
+      'readingMaxPages',
+      'stepsTarget',
+      'runTargetKm',
+      'floorsTarget',
+      'travelSubstituteSteps',
+      'travelSubstituteRunKm',
+      'familyTargetMinutes',
+      'travelThresholdHours',
+      'calorieTarget',
+      'proteinTargetG',
+    ] as const
+  ).forEach(k => {
+    const n = Number(merged[k]);
+    merged[k] = Number.isFinite(n) && n > 0 ? n : DEFAULT_CONFIG[k];
+  });
+  const grace = Number(merged.wakeUpGraceMinutes);
+  merged.wakeUpGraceMinutes = Number.isFinite(grace) && grace >= 0 ? grace : DEFAULT_CONFIG.wakeUpGraceMinutes;
+  const deposit = Number(merged.depositAmount);
+  merged.depositAmount = Number.isFinite(deposit) && deposit >= 0 ? deposit : DEFAULT_CONFIG.depositAmount;
   return merged;
 }
 

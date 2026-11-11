@@ -34,6 +34,10 @@ interface AdminPanelScreenProps {
   onNavigateTab: (tab: string) => void;
 }
 
+/** PDF proofs come back as data: URLs offline, but as https://…/file.pdf from Supabase Storage. */
+const isPdfProof = (url?: string, name?: string) =>
+  Boolean(url && (url.startsWith('data:application/pdf') || /\.pdf($|\?)/i.test(url) || /\.pdf$/i.test(name || '')));
+
 const NumberField: React.FC<{ label: string; value: number; onChange: (n: number) => void; step?: string; suffix?: string }> = ({
   label,
   value,
@@ -117,7 +121,9 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
   }
 
   const targetUser = challengers.find(c => c.id === selectedUserId) || challengers[0];
-  const targetLog = (allUsersLogs[selectedUserId] || {})[selectedDate] || createDefaultLog(selectedDate, config, selectedUserId);
+  // Header and edits must agree on WHO is being edited (selected user may have been removed)
+  const editUserId = targetUser?.id || selectedUserId;
+  const targetLog = (allUsersLogs[editUserId] || {})[selectedDate] || createDefaultLog(selectedDate, config, editUserId);
   const { items, completedCount, totalCount } = validateDayTasks(targetLog, config);
   const targetDayNum = getDayNumber(selectedDate, config.startDate);
   const formEndDate = form.startDate ? getEndDate(form.startDate, form.durationDays || 1) : '';
@@ -197,7 +203,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                 </div>
                 {req.doctorNotes && <p className="text-sm text-zinc-300 bg-ink-850 rounded-xl px-3.5 py-2.5">{req.doctorNotes}</p>}
                 {req.medicalProofUrl &&
-                  (req.medicalProofUrl.startsWith('data:application/pdf') ? (
+                  (isPdfProof(req.medicalProofUrl, req.medicalProofName) ? (
                     <a href={req.medicalProofUrl} target="_blank" rel="noreferrer" className="btn-secondary w-full">
                       <ExternalLink className="w-4 h-4" /> Open PDF proof
                     </a>
@@ -251,7 +257,11 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                   </button>
                   <button
                     onClick={() => {
-                      if (window.confirm(`Remove ${c.name}? All their logs will be deleted.`)) adminDeleteUser(c.id);
+                      if (window.confirm(`Remove ${c.name}? All their logs will be deleted.`)) {
+                        adminDeleteUser(c.id).then(ok => {
+                          if (!ok) alert(`Could not remove ${c.name} from the cloud database. Check your connection and try again.`);
+                        });
+                      }
                     }}
                     aria-label={`Remove ${c.name}`}
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-500 active:bg-rose-500/10 active:text-rose-400"
@@ -274,7 +284,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="field-label">Challenger</label>
-              <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} className="input">
+              <select value={editUserId} onChange={e => setSelectedUserId(e.target.value)} className="input">
                 {challengers.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.avatar} {c.name}
@@ -300,7 +310,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
               </div>
               <button
                 onClick={() => {
-                  setCurrentUserId(selectedUserId);
+                  setCurrentUserId(editUserId);
                   setCurrentDate(selectedDate);
                   onNavigateTab('tracker');
                 }}
@@ -324,7 +334,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                     <CheckButton
                       checked={item.isCompleted}
                       disabled={item.id === 'progressPhoto' && !targetLog.tasks.progressPhoto.photoUrl}
-                      onClick={() => adminUpdateLog(selectedUserId, selectedDate, prev => toggleTask(prev, item.id, config))}
+                      onClick={() => adminUpdateLog(editUserId, selectedDate, prev => toggleTask(prev, item.id, config))}
                       label={item.title}
                     />
                   </div>
@@ -339,7 +349,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                 label="Medical exemption"
                 checked={targetLog.sickness.isExempt}
                 onChange={next =>
-                  adminUpdateLog(selectedUserId, selectedDate, prev => ({
+                  adminUpdateLog(editUserId, selectedDate, prev => ({
                     ...prev,
                     sickness: {
                       ...prev.sickness,
@@ -565,12 +575,15 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
         footer={
           <button
             className="btn-primary w-full"
-            disabled={newPasswordVal.trim().length < 4}
+            disabled={newPasswordVal.trim().length < 6}
             onClick={async () => {
               if (!resettingUser) return;
               const res = await adminResetPassword(resettingUser.id, newPasswordVal.trim());
               alert(res.message);
-              setResettingUser(null);
+              if (res.success) {
+                setResettingUser(null);
+                setNewPasswordVal('');
+              }
             }}
           >
             Save new password
@@ -582,7 +595,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
           className="input font-mono"
           value={newPasswordVal}
           onChange={e => setNewPasswordVal(e.target.value)}
-          placeholder="At least 4 characters"
+          placeholder="At least 6 characters"
           autoCapitalize="off"
         />
       </Sheet>

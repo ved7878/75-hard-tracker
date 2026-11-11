@@ -100,9 +100,16 @@ export const LoginScreen: React.FC = () => {
         </form>
       </div>
 
-      <p className="relative text-center text-[12px] text-zinc-600 pb-6">
-        {isCloud ? 'Synced with the squad' : 'Offline mode · data stays on this device'}
-      </p>
+      {!isCloud && import.meta.env.PROD ? (
+        <p className="relative text-center text-[13px] text-amber-400 pb-6 px-4">
+          Not connected to the squad database (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY missing). Data will only be
+          saved on this phone.
+        </p>
+      ) : (
+        <p className="relative text-center text-[12px] text-zinc-600 pb-6">
+          {isCloud ? 'Synced with the squad' : 'Offline mode · data stays on this device'}
+        </p>
+      )}
 
       <ForgotPasswordModal
         isOpen={isForgotOpen}

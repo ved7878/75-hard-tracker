@@ -16,7 +16,8 @@ class SoundEffects {
         this.ctx = new AudioCtx();
       }
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
+    // iOS Safari can report 'interrupted' (after a call / backgrounding), not just 'suspended'
+    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') {
       this.ctx.resume();
     }
     return this.ctx;

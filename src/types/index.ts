@@ -53,10 +53,15 @@ export interface ChallengeConfig {
   reminderEnabled: boolean;
   strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
   lockPastDays: boolean; // true - only today is editable for standard users
-  adminPin: string; // default '7575'
-  adminPassword?: string; // default 'admin7575'
-  recoveryKey?: string; // default '75hard'
+  /** @deprecated credentials no longer live in the (public) config – kept only so old saved configs type-check */
+  adminPin?: string;
+  /** @deprecated see adminPin */
+  adminPassword?: string;
+  /** @deprecated see adminPin */
+  recoveryKey?: string;
   requireLogin: boolean; // false by default for quick access, can be toggled
+  /** Set by supabase/setup_all_and_reset_data.sql – phones drop logs cached before this time */
+  dataResetAt?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   autoSyncSupabase: boolean;

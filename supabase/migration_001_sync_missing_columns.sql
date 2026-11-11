@@ -214,13 +214,118 @@ DROP POLICY IF EXISTS "Allow anon password_resets" ON public.password_resets;
 CREATE POLICY "Allow anon password_resets" ON public.password_resets FOR ALL USING (true);
 
 -- ------------------------------------------------------------------------------
--- 6. Safe public view (no password / pin / recovery_answer)
+-- 6. Squad Profiles Real Table (Full editing supported in Supabase Table Editor)
 -- ------------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.squad_profiles AS
-SELECT id, username, name, email, avatar, color, role, deposit_amount, created_at
-FROM public.profiles;
+-- Only drop it while it is still a VIEW (re-running must not fail once it's a table)
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname = 'public' AND c.relname = 'squad_profiles' AND c.relkind = 'v') THEN
+        DROP VIEW public.squad_profiles CASCADE;
+    END IF;
+END $$;
 
-GRANT SELECT ON public.squad_profiles TO anon, authenticated;
+CREATE TABLE IF NOT EXISTS public.squad_profiles (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    avatar TEXT DEFAULT '🦁',
+    color TEXT DEFAULT 'from-rose-600 to-rose-700',
+    role TEXT NOT NULL DEFAULT 'challenger' CHECK (role IN ('challenger', 'admin')),
+    deposit_amount NUMERIC DEFAULT 2000,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_squad_profiles_username ON public.squad_profiles(username);
+CREATE INDEX IF NOT EXISTS idx_squad_profiles_role ON public.squad_profiles(role);
+
+ALTER TABLE public.squad_profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon all squad_profiles" ON public.squad_profiles;
+CREATE POLICY "Allow anon all squad_profiles" ON public.squad_profiles FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON TABLE public.squad_profiles TO anon, authenticated, service_role;
+
+-- Profiles -> squad_profiles auto-sync
+CREATE OR REPLACE FUNCTION sync_squad_profiles_from_profiles()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.squad_profiles (
+        id, username, name, email, avatar, color, role, deposit_amount, created_at, updated_at
+    ) VALUES (
+        NEW.id, NEW.username, NEW.name, NEW.email, NEW.avatar, NEW.color, NEW.role, NEW.deposit_amount, COALESCE(NEW.created_at, NOW()), NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        username = EXCLUDED.username,
+        name = EXCLUDED.name,
+        email = EXCLUDED.email,
+        avatar = EXCLUDED.avatar,
+        color = EXCLUDED.color,
+        role = EXCLUDED.role,
+        deposit_amount = EXCLUDED.deposit_amount,
+        updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_sync_squad_profiles ON public.profiles;
+CREATE TRIGGER trigger_sync_squad_profiles
+AFTER INSERT OR UPDATE ON public.profiles
+FOR EACH ROW EXECUTE PROCEDURE sync_squad_profiles_from_profiles();
+
+-- Profiles delete -> squad_profiles delete
+CREATE OR REPLACE FUNCTION sync_squad_profiles_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM public.squad_profiles WHERE id = OLD.id;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_sync_squad_profiles_del ON public.profiles;
+CREATE TRIGGER trigger_sync_squad_profiles_del
+AFTER DELETE ON public.profiles
+FOR EACH ROW EXECUTE PROCEDURE sync_squad_profiles_delete();
+
+-- squad_profiles -> profiles sync (when updated directly in Supabase)
+CREATE OR REPLACE FUNCTION sync_profiles_from_squad_profiles()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE public.profiles
+    SET username = NEW.username,
+        name = NEW.name,
+        email = NEW.email,
+        avatar = NEW.avatar,
+        color = NEW.color,
+        role = NEW.role,
+        deposit_amount = NEW.deposit_amount,
+        updated_at = NOW()
+    WHERE id = NEW.id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_sync_profiles_from_squad ON public.squad_profiles;
+CREATE TRIGGER trigger_sync_profiles_from_squad
+AFTER UPDATE ON public.squad_profiles
+FOR EACH ROW
+WHEN (pg_trigger_depth() = 0)
+EXECUTE PROCEDURE sync_profiles_from_squad_profiles();
+
+-- Initial backfill into squad_profiles
+INSERT INTO public.squad_profiles (id, username, name, email, avatar, color, role, deposit_amount, created_at, updated_at)
+SELECT id, username, name, email, avatar, color, role, deposit_amount, created_at, updated_at
+FROM public.profiles
+ON CONFLICT (id) DO UPDATE SET
+    username = EXCLUDED.username,
+    name = EXCLUDED.name,
+    email = EXCLUDED.email,
+    avatar = EXCLUDED.avatar,
+    color = EXCLUDED.color,
+    role = EXCLUDED.role,
+    deposit_amount = EXCLUDED.deposit_amount,
+    updated_at = NOW();
 
 -- ------------------------------------------------------------------------------
 -- 7. Storage buckets

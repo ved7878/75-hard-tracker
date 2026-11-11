@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
   ChallengeConfig,
@@ -89,8 +89,44 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [currentDate, setCurrentDate] = useState<string>(() => formatDate(new Date()));
   const [adminOverrideMode, setAdminOverrideMode] = useState<boolean>(false);
   const [isLoadingSession, setIsLoadingSession] = useState<boolean>(true);
+  // The account that actually signed in (currentUser changes while the referee previews someone)
+  const signedInUserRef = useRef<UserProfile | null>(null);
 
-  const todayStr = formatDate(new Date());
+  // Always-current copy of the logs, so async callers (photo uploads, quick double taps)
+  // build on the latest data instead of the snapshot from when they started.
+  const rawLogsRef = useRef(rawLogs);
+  rawLogsRef.current = rawLogs;
+  const setLogsNow = (updater: (prev: Record<string, Record<string, DailyLog>>) => Record<string, Record<string, DailyLog>>) => {
+    rawLogsRef.current = updater(rawLogsRef.current);
+    setAllUsersLogs(rawLogsRef.current);
+  };
+
+  // Calendar day tick: the app can stay open (or sit in the background) past midnight.
+  // Without this, "today" stays stuck on yesterday – edits land on the wrong day and the
+  // morning wake-up check-in shows as closed.
+  const [todayStr, setTodayStr] = useState<string>(() => formatDate(new Date()));
+  const todayRef = useRef(todayStr);
+  useEffect(() => {
+    const tick = () => {
+      const now = formatDate(new Date());
+      if (now !== todayRef.current) {
+        const previous = todayRef.current;
+        todayRef.current = now;
+        setTodayStr(now);
+        // Move forward only if the user was looking at "today" (don't yank them off a past day)
+        setCurrentDate(d => (d === previous ? now : d));
+      }
+    };
+    const id = setInterval(tick, 30_000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, []);
+
   const isTodayDate = currentDate === todayStr;
   const isAdmin = currentUser?.role === 'admin';
   const isEditable = isDateEditable(currentDate, config, isAdmin || adminOverrideMode);
@@ -114,10 +150,17 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     const flush = () => {
       if (document.visibilityState === 'hidden') supabaseService.flushPendingSaves();
+      // Coming back to the app: pull the latest data so the referee's approvals/edits
+      // aren't overwritten by this phone's stale copy on the next save.
+      else if (document.visibilityState === 'visible') reloadDataRef.current?.();
     };
+    const onPageHide = () => supabaseService.flushPendingSaves();
     document.addEventListener('visibilitychange', flush);
-    window.addEventListener('pagehide', supabaseService.flushPendingSaves.bind(supabaseService));
-    return () => document.removeEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', onPageHide);
+    };
   }, []);
 
   // Active user's logs
@@ -207,38 +250,52 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       if (fetchedConfig) setConfigState(normalizeConfig(fetchedConfig));
       if (fetchedUsers) setUsers(fetchedUsers);
-      if (fetchedLogs) setAllUsersLogs(fetchedLogs);
+      if (fetchedLogs) setLogsNow(() => fetchedLogs);
     } catch (err) {
       console.warn('Error loading initial data:', err);
     }
   }, []);
 
+  // Throttled refresh used when the app returns to the foreground
+  const lastReloadRef = useRef(0);
+  const reloadDataRef = useRef<() => void>();
+  reloadDataRef.current = () => {
+    if (Date.now() - lastReloadRef.current < 15_000) return;
+    lastReloadRef.current = Date.now();
+    reloadData();
+  };
+
   // Check saved session on mount
   useEffect(() => {
     const initAuth = async () => {
       setIsLoadingSession(true);
-      await reloadData();
 
-      const savedUserId = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (savedUserId === 'admin') {
-        const adminUser: UserProfile = {
-          id: 'admin',
-          username: 'admin',
-          name: 'Referee / Admin',
-          role: 'admin',
-          avatar: '⚖️',
-          color: 'from-purple-600 to-indigo-800',
-          depositAmount: 0,
-        };
-        setCurrentUser(adminUser);
-        setAdminOverrideMode(true);
-      } else if (savedUserId) {
-        const allU = await supabaseService.getUsers();
-        const found = allU.find(u => u.id === savedUserId);
-        if (found) {
-          setCurrentUser(found);
-          if (found.role === 'admin') {
-            setAdminOverrideMode(true);
+      if (supabaseService.isConfigured()) {
+        // Cloud: the database checks the stored session token – a hand-edited
+        // localStorage value can't sign anyone in.
+        const res = await supabaseService.restoreSession();
+        if (res.status === 'signed-out') {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        } else {
+          signedInUserRef.current = res.user;
+          setCurrentUser(res.user);
+          localStorage.setItem(AUTH_STORAGE_KEY, res.user.id);
+          if (res.user.role === 'admin') setAdminOverrideMode(true);
+        }
+        await reloadData();
+      } else {
+        // Local single-device mode
+        await reloadData();
+        const savedUserId = localStorage.getItem(AUTH_STORAGE_KEY);
+        if (savedUserId) {
+          const allU = await supabaseService.getUsers();
+          const found = allU.find(u => u.id === savedUserId);
+          if (found) {
+            signedInUserRef.current = found;
+            setCurrentUser(found);
+            if (found.role === 'admin') setAdminOverrideMode(true);
+          } else {
+            localStorage.removeItem(AUTH_STORAGE_KEY);
           }
         }
       }
@@ -254,46 +311,15 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setupDailyReminder(prefs.time, prefs.enabled);
   }, [config.reminderTime, config.reminderEnabled]);
 
-  // Unified Login (handles challenger or admin credentials seamlessly without separate login modules)
+  // Unified login for challengers and the referee. In cloud mode the database checks the
+  // password / PIN (they never reach the browser); there are no built-in admin credentials.
   const login = async (usernameOrEmail: string, passwordOrPin: string) => {
-    const cleanId = usernameOrEmail.trim().toLowerCase();
-    const cleanSecret = passwordOrPin.trim();
-
-    // 1. Direct Admin Credential Check
-    const adminPin = config.adminPin || '7575';
-    const adminPass = config.adminPassword || 'admin7575';
-
-    if (
-      (cleanId === 'admin' || cleanId === 'referee') &&
-      (cleanSecret === adminPin ||
-        cleanSecret === adminPass ||
-        cleanSecret === '7575' ||
-        cleanSecret === 'admin7575')
-    ) {
-      const adminUser: UserProfile = {
-        id: 'admin',
-        username: 'admin',
-        name: 'Referee / Admin',
-        role: 'admin',
-        avatar: '⚖️',
-        color: 'from-purple-600 to-indigo-800',
-        depositAmount: 0,
-      };
-      setCurrentUser(adminUser);
-      localStorage.setItem(AUTH_STORAGE_KEY, 'admin');
-      setAdminOverrideMode(true);
-      await reloadData();
-      return { success: true };
-    }
-
-    // 2. Challenger / User Login
-    const res = await supabaseService.login(cleanId, cleanSecret);
+    const res = await supabaseService.login(usernameOrEmail.trim().toLowerCase(), passwordOrPin.trim());
     if (res.success && res.user) {
+      signedInUserRef.current = res.user;
       setCurrentUser(res.user);
       localStorage.setItem(AUTH_STORAGE_KEY, res.user.id);
-      if (res.user.role === 'admin') {
-        setAdminOverrideMode(true);
-      }
+      setAdminOverrideMode(res.user.role === 'admin');
       await reloadData();
       return { success: true };
     }
@@ -312,10 +338,28 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Logout
   const logout = () => {
+    supabaseService.flushPendingSaves();
+    supabaseService.logout(); // revokes the session token on the server
+    signedInUserRef.current = null;
     localStorage.removeItem(AUTH_STORAGE_KEY);
     setCurrentUser(null);
     setAdminOverrideMode(false);
   };
+
+  // If the signed-in challenger (or the one the admin is previewing) gets removed from the
+  // squad, don't keep editing a profile that no longer exists.
+  useEffect(() => {
+    if (!currentUser || currentUser.id === 'admin' || users.length === 0) return;
+    if (users.some(u => u.id === currentUser.id)) return;
+    if (signedInUserRef.current?.role === 'admin') {
+      // Referee was previewing the removed challenger – go back to the referee's own view
+      setCurrentUser(signedInUserRef.current);
+    } else {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      setCurrentUser(null);
+      setAdminOverrideMode(false);
+    }
+  }, [users, currentUser]);
 
   // Switch challenger view (if admin)
   const setCurrentUserId = (id: string) => {
@@ -345,7 +389,10 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return false;
       }
 
-      const existing = logs[currentDate] || createDefaultLog(currentDate, config, currentUser.id);
+      // Read the LATEST log (not this render's snapshot): a photo upload that finishes after
+      // the user ticked other habits must not wipe those ticks.
+      const existing =
+        rawLogsRef.current[currentUser.id]?.[currentDate] || createDefaultLog(currentDate, config, currentUser.id);
       const before = validateDayTasks(existing, config);
       const updated = updater(existing);
 
@@ -382,7 +429,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       updated.updatedAt = new Date().toISOString();
 
       // Update state
-      setAllUsersLogs(prev => ({
+      setLogsNow(prev => ({
         ...prev,
         [currentUser.id]: {
           ...(prev[currentUser.id] || {}),
@@ -394,7 +441,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       supabaseService.saveLogDebounced(currentUser.id, updated);
       return true;
     },
-    [currentUser, logs, currentDate, config, isEditable, isAdmin]
+    [currentUser, currentDate, config, isEditable, isAdmin]
   );
 
   // Admin: Update System Config
@@ -444,8 +491,10 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Admin: Time-Machine Override (Modify any past or future day)
   const adminUpdateLog = async (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => {
-    const userLogs = allUsersLogs[userId] || {};
-    const existing = userLogs[dateStr] || createDefaultLog(dateStr, config, userId);
+    // A debounced save still queued for this day (e.g. notes typed a moment ago) would
+    // fire after this one and undo the admin's change – drop it, we save the merged log now.
+    supabaseService.cancelPendingSave(userId, dateStr);
+    const existing = rawLogsRef.current[userId]?.[dateStr] || createDefaultLog(dateStr, config, userId);
     const updated = updater(existing);
 
     updated.userId = userId;
@@ -456,7 +505,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updated.failedTasks = failedNames;
     updated.updatedAt = new Date().toISOString();
 
-    setAllUsersLogs(prev => ({
+    setLogsNow(prev => ({
       ...prev,
       [userId]: {
         ...(prev[userId] || {}),
@@ -475,6 +524,8 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       sickness: {
         ...prev.sickness,
         isSick: true,
+        // The referee has verified it – without this flag the day is still scored as a miss
+        hasMedicalProof: true,
         isExempt: true,
         status: 'approved',
         reviewedBy: 'Admin',

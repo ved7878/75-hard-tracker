@@ -20,10 +20,10 @@ A modern, mobile-first web application designed for the **75 HARD** challenge, s
 │                      SUPABASE BAAS TIER                     │
 │  PostgreSQL Database + Row-Level Security + Cloud Storage   │
 ├─────────────────────────────────────────────────────────────┤
-│ • public.profiles          - User accounts, PINs & passwords│
+│ • public.profiles          - Accounts (bcrypt-hashed creds) │
+│ • public.app_sessions      - Hashed login session tokens    │
 │ • public.challenge_config  - System rules & habit targets   │
 │ • public.daily_logs        - 75-Day task records & journals │
-│ • public.password_resets   - Recovery tokens                │
 │ • storage: progress-photos - High-res daily body photos     │
 │ • storage: medical-proofs  - Medical prescriptions & slips  │
 └─────────────────────────────────────────────────────────────┘
@@ -48,27 +48,34 @@ A modern, mobile-first web application designed for the **75 HARD** challenge, s
 
 ---
 
-## 🔑 Challenger & Admin Credentials
+## 🔑 Accounts
 
-| Account | Display Name | Username | Password | 4-Digit PIN | Avatar | Deposit Pledge |
-|---|---|---|---|:---:|:---:|:---:|
-| **Challenger 1** | **Vedant** | `vedant` | `vedant123` | `1111` | 🦁 | ₹2,000 |
-| **Challenger 2** | **Vedansh** | `vedansh` | `vedansh123` | `2222` | 🐺 | ₹2,000 |
-| **Challenger 3** | **Aryaman** | `aryaman` | `aryaman123` | `3333` | 🦅 | ₹2,000 |
-| **Referee / Admin** | **Admin Portal** | `admin` | `admin7575` | `7575` | ⚖️ | — |
+| Account | Username | Avatar | Deposit Pledge |
+|---|---|:---:|:---:|
+| **Challenger 1** — Vedant | `vedant` | 🦁 | ₹2,000 |
+| **Challenger 2** — Vedansh | `vedansh` | 🐺 | ₹2,000 |
+| **Challenger 3** — Aryaman | `aryaman` | 🦅 | ₹2,000 |
+| **Referee / Admin** | `admin` | ⚖️ | — |
+
+Passwords and PINs are **not** listed here. The seed script creates starter credentials; the
+referee must change all of them right after the first sign-in (see below).
 
 ---
 
-## 🔐 Password Management & Forgot Password Flow
+## 🔐 Login Security & Password Management
 
-1. **Self-Service Password Reset**:
-   - On the login screen, click **"Forgot Password?"**.
-   - Enter your Username (e.g. `vedant`) and the Squad Recovery Key or Admin PIN (`7575`).
-   - Enter and confirm your new password.
-2. **Admin One-Click Password Reset**:
-   - The Admin can open **Admin Panel > Challenger Accounts**, tap the key icon 🔑 next to any challenger, and assign a new password immediately.
-3. **In-App Password Update**:
-   - Any logged-in user can change their password directly in **Settings > Account Security > Change Password**.
+- **Passwords and PINs never leave the database.** They are stored as bcrypt hashes and checked
+  inside Postgres (`app_login`). The app receives a random session token (valid 60 days) that the
+  database's Row Level Security checks on every request.
+- **Brute-force protection:** 5 wrong attempts in 15 minutes (or 20 in a day) temporarily locks
+  that username.
+- **Who can change what:** challengers write only their own logs; only the referee can change the
+  rules, add/remove challengers, and approve or reject sick days.
+- **Forgot password:** ask the referee — **Admin → Squad → 🔑** sets a new password (and signs that
+  person out on their other devices).
+- **Change your own password:** **More → Change password** (minimum 6 characters).
+- **Referee locked out?** Run the snippet at the top of `supabase/migration_004_secure_login.sql`
+  in the Supabase SQL editor.
 
 ---
 
@@ -76,9 +83,12 @@ A modern, mobile-first web application designed for the **75 HARD** challenge, s
 
 1. Create a free project at [Supabase](https://supabase.com).
 2. Go to **SQL Editor** in your Supabase dashboard.
-3. Open `supabase/schema.sql` (or click **Copy SQL Schema** in the Admin Panel) and paste it into the SQL editor.
-4. Click **Run**.
-5. Copy your **Project URL** and **anon public API Key** from **Project Settings > API**.
+3. **New project:** click **Copy SQL Schema** in the Admin Panel (it contains `supabase/schema.sql`
+   followed by `supabase/migration_004_secure_login.sql`), paste it into the SQL editor and click **Run**.
+4. **Existing project:** run the files in `supabase/` in order: `migration_001` → `002` → `003` → `004`.
+   Re-running `schema.sql` re-opens access, so always run `migration_004_secure_login.sql` after it.
+5. Sign in as the referee and **change every password and PIN** (Admin → Squad → 🔑, and More → Change password).
+6. Copy your **Project URL** and **anon public API Key** from **Project Settings > API**.
 
 ---
 
@@ -90,8 +100,7 @@ A modern, mobile-first web application designed for the **75 HARD** challenge, s
 4. In **Project Settings > Environment Variables**, add:
    - `VITE_SUPABASE_URL` = `https://your-project.supabase.co`
    - `VITE_SUPABASE_ANON_KEY` = `your-anon-public-key`
-   - `VITE_ADMIN_PIN` = `7575` (optional)
-   - `VITE_RECOVERY_KEY` = `HARD75_RECOVERY_SQUAD` (optional)
+   - (Never put secrets in `VITE_*` variables — they are compiled into the public JavaScript.)
 5. Click **Deploy**. Vercel will build and launch your production app!
 
 ---

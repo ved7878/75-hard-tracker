@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Camera, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { formatPrettyDate, getDayNumber } from '../../services/rulesEngine';
@@ -14,6 +14,10 @@ export const PhotoGalleryModal: React.FC<PhotoGalleryModalProps> = ({ isOpen, on
   const challengers = users.filter(u => u.role !== 'admin');
   const defaultId = challengers.some(c => c.id === currentUser?.id) ? currentUser!.id : challengers[0]?.id || 'user_1';
   const [selectedUserId, setSelectedUserId] = useState<string>(defaultId);
+  // The modal stays mounted – re-pick the person each time it opens (admin may have switched)
+  useEffect(() => {
+    if (isOpen) setSelectedUserId(defaultId);
+  }, [isOpen, defaultId]);
   const [mode, setMode] = useState<'grid' | 'compare'>('grid');
   const [slider, setSlider] = useState(50);
   const [active, setActive] = useState<number | null>(null);

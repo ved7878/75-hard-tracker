@@ -39,13 +39,30 @@ export function toggleTask(log: DailyLog, taskId: keyof TaskState, config: Chall
       tasks.physicalActivity = { ...pa, completed: next, value: next ? Math.max(pa.value || 0, target) : 0 };
       break;
     }
-    case 'gym':
-      tasks.gym = {
-        ...tasks.gym,
-        completed: next,
-        substituteValue: next ? tasks.gym.substituteValue : 0,
-      };
+    case 'gym': {
+      const t = log.travel;
+      const substituteMode = t.isTravelling && t.hours > config.travelThresholdHours && !t.gymAvailable;
+      if (substituteMode) {
+        // Travel day with no gym: the tick means "I did the substitute" – record the
+        // required steps / km so the 15K steps / 5 km rule is actually reflected.
+        const type = tasks.gym.substituteType || 'steps';
+        const target = type === 'run' ? config.travelSubstituteRunKm : config.travelSubstituteSteps;
+        tasks.gym = {
+          ...tasks.gym,
+          completed: next,
+          isSubstituted: true,
+          substituteType: type,
+          substituteValue: next ? Math.max(tasks.gym.substituteValue || 0, target) : 0,
+        };
+      } else {
+        tasks.gym = {
+          ...tasks.gym,
+          completed: next,
+          substituteValue: next ? tasks.gym.substituteValue : 0,
+        };
+      }
       break;
+    }
     case 'diet':
       tasks.diet = { ...tasks.diet, completed: next, cleanDietChecked: next };
       break;

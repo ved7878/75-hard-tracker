@@ -398,21 +398,16 @@ describe('8. User Authentication, Security & Password Recovery', () => {
     return { success: false, error: 'Incorrect password or PIN.' };
   }
 
-  function authenticateAdmin(secret: string, adminPin = '7575', adminPass = 'admin7575') {
-    const clean = secret.trim();
-    if (clean === adminPin || clean === adminPass || clean === '7575' || clean === 'admin7575') {
-      return { success: true, role: 'admin' };
-    }
-    return { success: false, error: 'Invalid Admin Password or PIN.' };
-  }
-
-  function resetPassword(username: string, recoveryKey: string, newPass: string) {
+  // Mirrors the local-mode reset: only the account's OWN recovery answer works.
+  // (Shared master keys like "7575" / "75hard" were removed – they let anyone take over any account.)
+  function resetPassword(username: string, recoveryAnswer: string, newPass: string, answers: Record<string, string> = {}) {
     const cleanU = username.trim().toLowerCase();
-    const cleanKey = recoveryKey.trim();
-    const isMaster = cleanKey === '7575' || cleanKey.toLowerCase() === '75hard';
     const found = users.find(u => u.username.toLowerCase() === cleanU || u.name.toLowerCase() === cleanU);
     if (!found) return { success: false, error: 'No account found.' };
-    if (!isMaster) return { success: false, error: 'Invalid Recovery Key or Admin PIN.' };
+    const own = answers[found.id];
+    if (!own || own.toLowerCase() !== recoveryAnswer.trim().toLowerCase()) {
+      return { success: false, error: 'Wrong recovery answer.' };
+    }
     found.password = newPass;
     return { success: true, user: found };
   }
@@ -447,20 +442,37 @@ describe('8. User Authentication, Security & Password Recovery', () => {
     assert.strictEqual(res.error, 'Challenger account not found.');
   });
 
-  it('Admin logs in with Admin PIN 7575 or password admin7575', () => {
-    assert.strictEqual(authenticateAdmin('7575').success, true);
-    assert.strictEqual(authenticateAdmin('admin7575').success, true);
-    assert.strictEqual(authenticateAdmin('wrong').success, false);
+  it('Referee signs in through the same account check as everyone else', () => {
+    assert.strictEqual(authenticate('admin', 'admin7575').success, true);
+    assert.strictEqual(authenticate('admin', 'wrong').success, false);
   });
 
-  it('Forgot password self-service recovery with Admin PIN 7575 or squad key 75hard', () => {
-    const res = resetPassword('vedant', '7575', 'newVedantPass999');
-    assert.strictEqual(res.success, true);
-    assert.strictEqual(res.user?.password, 'newVedantPass999');
+  it('Shared master keys can no longer reset someone else\'s password', () => {
+    assert.strictEqual(resetPassword('vedant', '7575', 'hijacked123').success, false);
+    assert.strictEqual(resetPassword('vedant', '75hard', 'hijacked123').success, false);
+    assert.strictEqual(authenticate('vedant', 'hijacked123').success, false);
+  });
 
-    // Verify new password immediately works
-    const loginRes = authenticate('vedant', 'newVedantPass999');
-    assert.strictEqual(loginRes.success, true);
+  it('Own recovery answer resets the password (local mode)', () => {
+    const res = resetPassword('vedant', 'Pune', 'newVedantPass999', { user_1: 'pune' });
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(authenticate('vedant', 'newVedantPass999').success, true);
+  });
+
+  it('Rules config never carries credentials and rejects broken values', () => {
+    const cfg = normalizeConfig({
+      ...DEFAULT_CONFIG,
+      adminPin: '7575',
+      adminPassword: 'admin7575',
+      wakeUpTarget: '',
+      readingMinPages: 0,
+      stepsTarget: -5,
+    });
+    assert.strictEqual(cfg.adminPin, undefined);
+    assert.strictEqual(cfg.adminPassword, undefined);
+    assert.strictEqual(cfg.wakeUpTarget, DEFAULT_CONFIG.wakeUpTarget);
+    assert.strictEqual(cfg.readingMinPages, DEFAULT_CONFIG.readingMinPages);
+    assert.strictEqual(cfg.stepsTarget, DEFAULT_CONFIG.stepsTarget);
   });
 });
 

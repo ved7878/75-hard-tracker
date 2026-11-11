@@ -9,6 +9,14 @@ interface AddUserModalProps {
 
 const EMOJIS = ['🦁', '🐺', '🦅', '⚡', '🥊', '🦍', '🥋', '🔥', '⚔️', '🏆', '💎', '🎯'];
 
+/** 10-char password without look-alike characters, from the browser's secure RNG */
+function randomPassword(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint32Array(10);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
+}
+
 export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) => {
   const { adminAddUser, config } = useChallenge();
   const [name, setName] = useState('');
@@ -35,8 +43,10 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
     if (pin && !/^\d{4,6}$/.test(pin)) return setErrorMsg('PIN must be 4–6 digits.');
 
     const cleanUsername = username.trim().toLowerCase();
-    const finalPassword = password.trim() || `${cleanUsername}123`;
-    const finalPin = pin.trim() || '1234';
+    if (password.trim() && password.trim().length < 6) return setErrorMsg('Password needs at least 6 characters.');
+    // No guessable defaults ("username123" / "1234"): blank password → random one, blank PIN → no PIN
+    const finalPassword = password.trim() || randomPassword();
+    const finalPin = pin.trim();
 
     setLoading(true);
     const res = await adminAddUser({
@@ -51,7 +61,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
     setLoading(false);
 
     if (res.success) {
-      alert(`${name.trim()} added.\nUsername: ${cleanUsername}\nPassword: ${finalPassword}\nPIN: ${finalPin}`);
+      alert(
+        `${name.trim()} added.\nUsername: ${cleanUsername}\nPassword: ${finalPassword}` +
+          (finalPin ? `\nPIN: ${finalPin}` : '') +
+          `\n\nShare this privately – it won't be shown again.`
+      );
       reset();
       onClose();
     } else {
@@ -105,7 +119,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="field-label">Password</label>
-            <input className="input font-mono" placeholder="username123" value={password} onChange={e => setPassword(e.target.value)} />
+            <input className="input font-mono" placeholder="Leave blank to generate one" value={password} onChange={e => setPassword(e.target.value)} />
           </div>
           <div>
             <label className="field-label">PIN</label>
