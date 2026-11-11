@@ -42,11 +42,31 @@ export const storage = {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length >= 3) {
+          // Merge with DEFAULT_USERS to ensure all required fields (username, password, pin, etc.) exist
+          const merged = parsed.map(user => {
+            const def = DEFAULT_USERS.find(
+              d => d.id === user.id || d.username?.toLowerCase() === user.username?.toLowerCase() || d.name?.toLowerCase() === user.name?.toLowerCase()
+            );
+            if (def) {
+              return {
+                ...def,
+                ...user,
+                username: user.username || def.username,
+                password: user.password || def.password,
+                pin: user.pin || def.pin,
+                role: user.role || def.role,
+                depositAmount: user.depositAmount !== undefined ? user.depositAmount : def.depositAmount,
+              };
+            }
+            return user;
+          });
+
           // Ensure admin user exists in list
-          if (!parsed.some(u => u.role === 'admin' || u.id === 'admin')) {
-            parsed.push(DEFAULT_USERS[3]);
+          if (!merged.some(u => u.role === 'admin' || u.id === 'admin')) {
+            merged.push(DEFAULT_USERS[3]);
           }
-          return parsed;
+          storage.saveUsers(merged);
+          return merged;
         }
       }
     } catch (e) {

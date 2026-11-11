@@ -39,6 +39,7 @@ export const DEFAULT_USERS = [
     id: 'user_1',
     username: 'vedant',
     name: 'Vedant',
+    password: 'vedant123',
     pin: '1111',
     avatar: '🦁',
     color: 'from-rose-600 to-rose-700',
@@ -50,6 +51,7 @@ export const DEFAULT_USERS = [
     id: 'user_2',
     username: 'vedansh',
     name: 'Vedansh',
+    password: 'vedansh123',
     pin: '2222',
     avatar: '🐺',
     color: 'from-blue-600 to-indigo-700',
@@ -61,6 +63,7 @@ export const DEFAULT_USERS = [
     id: 'user_3',
     username: 'aryaman',
     name: 'Aryaman',
+    password: 'aryaman123',
     pin: '3333',
     avatar: '🦅',
     color: 'from-amber-500 to-orange-600',
@@ -72,6 +75,7 @@ export const DEFAULT_USERS = [
     id: 'admin',
     username: 'admin',
     name: 'Referee / Admin',
+    password: 'admin7575',
     pin: '7575',
     avatar: '⚖️',
     color: 'from-purple-600 to-indigo-800',
@@ -109,15 +113,37 @@ class DatabaseManager {
       try {
         const raw = fs.readFileSync(STORE_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
+        let loadedUsers = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...DEFAULT_USERS];
+        
+        // Auto-merge with DEFAULT_USERS to populate missing password, pin, username fields
+        loadedUsers = loadedUsers.map(u => {
+          const def = DEFAULT_USERS.find(d => d.id === u.id || d.username?.toLowerCase() === u.username?.toLowerCase() || d.name?.toLowerCase() === u.name?.toLowerCase());
+          if (def) {
+            return {
+              ...def,
+              ...u,
+              username: u.username || def.username,
+              password: u.password || def.password,
+              pin: u.pin || def.pin,
+            };
+          }
+          return u;
+        });
+
+        if (!loadedUsers.some(u => u.role === 'admin' || u.id === 'admin')) {
+          loadedUsers.push(DEFAULT_USERS[3]);
+        }
+
         this.store = {
           config: { ...DEFAULT_CONFIG, ...(parsed.config || {}) },
-          users: Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...DEFAULT_USERS],
+          users: loadedUsers,
           logs: parsed.logs || { user_1: {}, user_2: {}, user_3: {} },
           dbSettings: {
             supabaseUrl: process.env.SUPABASE_URL || parsed.dbSettings?.supabaseUrl || '',
             supabaseAnonKey: process.env.SUPABASE_ANON_KEY || parsed.dbSettings?.supabaseAnonKey || '',
           },
         };
+        this.save();
       } catch (e) {
         console.error('Failed to load store.json, using defaults', e);
         this.save();
@@ -171,12 +197,42 @@ class DatabaseManager {
     return this.store.users.map(({ pin, ...safeUser }) => safeUser);
   }
 
-  findUserByCredentials(username, pin) {
+  findUserByCredentials(username, secret) {
     const cleanUsername = String(username).trim().toLowerCase();
-    const cleanPin = String(pin).trim();
+    const cleanSecret = String(secret).trim();
     return this.store.users.find(
-      u => (u.username.toLowerCase() === cleanUsername || u.name.toLowerCase() === cleanUsername) && u.pin === cleanPin
+      u =>
+        (u.username?.toLowerCase() === cleanUsername ||
+          u.name?.toLowerCase() === cleanUsername ||
+          u.id?.toLowerCase() === cleanUsername ||
+          u.email?.toLowerCase() === cleanUsername) &&
+        (u.pin === cleanSecret || u.password === cleanSecret)
     );
+  }
+
+  forgotPassword(usernameOrEmail, recoveryKey, newPassword) {
+    const cleanU = String(usernameOrEmail).trim().toLowerCase();
+    const cleanKey = String(recoveryKey).trim();
+    const isMaster = cleanKey === '7575' || cleanKey.toLowerCase() === '75hard';
+
+    const user = this.store.users.find(
+      u =>
+        u.username?.toLowerCase() === cleanU ||
+        u.email?.toLowerCase() === cleanU ||
+        u.name?.toLowerCase() === cleanU
+    );
+
+    if (!user) {
+      return { success: false, message: 'Challenger account not found.' };
+    }
+
+    if (isMaster) {
+      user.password = newPassword;
+      this.save();
+      return { success: true, message: `Password for ${user.name} has been reset successfully!` };
+    }
+
+    return { success: false, message: 'Invalid Recovery Key or Admin PIN.' };
   }
 
   findUserById(id) {

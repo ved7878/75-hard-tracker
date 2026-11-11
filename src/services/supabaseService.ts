@@ -177,7 +177,8 @@ class SupabaseService {
       u =>
         u.username?.toLowerCase() === cleanId ||
         u.id.toLowerCase() === cleanId ||
-        u.email?.toLowerCase() === cleanId
+        u.email?.toLowerCase() === cleanId ||
+        u.name?.toLowerCase() === cleanId
     );
 
     if (!found) {
@@ -242,7 +243,8 @@ class SupabaseService {
       u =>
         u.username?.toLowerCase() === cleanId ||
         u.id.toLowerCase() === cleanId ||
-        u.email?.toLowerCase() === cleanId
+        u.email?.toLowerCase() === cleanId ||
+        u.name?.toLowerCase() === cleanId
     );
 
     if (userIndex === -1) {

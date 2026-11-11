@@ -62,31 +62,52 @@ function adminOnlyMiddleware(req, res, next) {
 // AUTH ENDPOINTS
 // -------------------------------------------------------------
 
-// Challenger Login (Username + PIN)
+// Challenger Login (Username + Password or PIN)
 app.post('/api/auth/login', (req, res) => {
-  const { username, pin } = req.body;
-  if (!username || !pin) {
-    return res.status(400).json({ error: 'Username and PIN are required.' });
+  const { username, pin, password } = req.body;
+  const secret = (pin || password || '').trim();
+  if (!username || !secret) {
+    return res.status(400).json({ error: 'Username and password/PIN are required.' });
   }
 
-  const user = db.findUserByCredentials(username, pin);
+  const user = db.findUserByCredentials(username, secret);
   if (!user) {
-    return res.status(401).json({ error: 'Invalid username or 4-digit PIN.' });
+    return res.status(401).json({ error: 'Invalid username, password, or 4-digit PIN.' });
   }
 
-  const { pin: _p, ...safeUser } = user;
+  const { pin: _p, password: _pw, ...safeUser } = user;
   res.json({
     success: true,
     user: safeUser,
   });
 });
 
-// Admin Login (Admin PIN)
+// Challenger Forgot Password
+app.post('/api/auth/forgot-password', (req, res) => {
+  const { username, recoveryKey, newPassword } = req.body;
+  if (!username || !recoveryKey || !newPassword) {
+    return res.status(400).json({ error: 'Username, recovery key, and new password are required.' });
+  }
+
+  const result = db.forgotPassword(username, recoveryKey, newPassword);
+  if (result.success) {
+    return res.json({ success: true, message: result.message });
+  }
+  return res.status(400).json({ error: result.message });
+});
+
+// Admin Login (Admin PIN or Password)
 app.post('/api/auth/admin-login', (req, res) => {
-  const { pin } = req.body;
+  const { pin, password } = req.body;
+  const secret = String(pin || password || '').trim();
   const config = db.getConfig();
 
-  if (String(pin).trim() === config.adminPin || String(pin).trim() === '7575') {
+  if (
+    secret === config.adminPin ||
+    secret === '7575' ||
+    secret === 'admin7575' ||
+    secret === config.adminPassword
+  ) {
     const adminUser = db.findUserById('admin') || {
       id: 'admin',
       name: 'Referee / Admin',
@@ -94,14 +115,14 @@ app.post('/api/auth/admin-login', (req, res) => {
       avatar: '⚖️',
       color: 'from-purple-600 to-indigo-800',
     };
-    const { pin: _p, ...safeAdmin } = adminUser;
+    const { pin: _p, password: _pw, ...safeAdmin } = adminUser;
     return res.json({
       success: true,
       user: safeAdmin,
     });
   }
 
-  return res.status(401).json({ error: 'Invalid Admin PIN.' });
+  return res.status(401).json({ error: 'Invalid Admin PIN or Password.' });
 });
 
 // Current User info

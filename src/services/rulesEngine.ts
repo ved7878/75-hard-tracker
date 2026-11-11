@@ -1,4 +1,4 @@
-import {
+import type {
   ChallengeConfig,
   DailyLog,
   DayStatus,
@@ -8,7 +8,7 @@ import {
   SquadDepositLedger,
   SquadDepositTransaction,
   ChallengerDepositBalance,
-} from '../types';
+} from '../types/index.ts';
 
 export const DEFAULT_CONFIG: ChallengeConfig = {
   startDate: '2026-11-11',
