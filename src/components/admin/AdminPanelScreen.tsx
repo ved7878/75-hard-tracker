@@ -35,6 +35,8 @@ import { SUPABASE_SETUP_SQL } from '../../services/supabase';
 
 export const AdminPanelScreen: React.FC = () => {
   const {
+    currentUser,
+    isAdmin,
     users,
     allUsersLogs,
     pendingExceptions,
@@ -53,6 +55,18 @@ export const AdminPanelScreen: React.FC = () => {
     updateDbSettings,
     depositLedger,
   } = useChallenge();
+
+  if (!isAdmin) {
+    return (
+      <div className="p-8 text-center bg-[#131418] border border-red-500/30 rounded-2xl space-y-3">
+        <ShieldAlert className="w-12 h-12 text-red-500 mx-auto mb-2" />
+        <h2 className="text-xl font-bold text-white">Access Denied</h2>
+        <p className="text-sm text-slate-400">
+          This area is strictly restricted to the 75 HARD Referee &amp; Admin.
+        </p>
+      </div>
+    );
+  }
 
   const challengers = users.filter(u => u.role !== 'admin');
   const [selectedUserId, setSelectedUserId] = useState<string>(challengers[0]?.id || 'user_1');

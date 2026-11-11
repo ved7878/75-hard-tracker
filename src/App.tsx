@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChallengeProvider, useChallenge } from './context/ChallengeContext';
 import { Header } from './components/common/Header';
 import { BottomNav } from './components/common/BottomNav';
@@ -16,6 +16,18 @@ const MainAppContent: React.FC = () => {
   const { currentUser, isAdmin } = useChallenge();
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [activeTaskId, setActiveTaskId] = useState<keyof TaskState | undefined>(undefined);
+
+  // Reset tab to dashboard whenever user changes or logs in
+  useEffect(() => {
+    setActiveTab('dashboard');
+  }, [currentUser?.id]);
+
+  // Security guard: If a non-admin user lands on or attempts to view 'admin', immediately redirect to 'dashboard'
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'admin') {
+      setActiveTab('dashboard');
+    }
+  }, [isAdmin, activeTab]);
 
   // AUTHENTICATION GATE: User must log in first before ANY content is visible!
   if (!currentUser) {
@@ -53,7 +65,13 @@ const MainAppContent: React.FC = () => {
         {activeTab === 'travel' && <TravelSicknessScreen />}
         {activeTab === 'analytics' && <AnalyticsScreen />}
         {activeTab === 'settings' && <SettingsScreen />}
-        {activeTab === 'admin' && <AdminPanelScreen />}
+        {activeTab === 'admin' && isAdmin && <AdminPanelScreen />}
+        {activeTab === 'admin' && !isAdmin && (
+          <DashboardScreen
+            onNavigateTab={setActiveTab}
+            onOpenTaskDetails={handleOpenTaskDetails}
+          />
+        )}
       </main>
 
       {/* Mobile Bottom Navigation */}
