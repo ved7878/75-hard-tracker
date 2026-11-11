@@ -19,6 +19,7 @@ import {
 import { useChallenge } from '../../context/ChallengeContext';
 import { formatDate } from '../../services/rulesEngine';
 import { supabaseService } from '../../services/supabaseService';
+import { compressImage } from '../../services/imageCompression';
 
 export const TravelSicknessScreen: React.FC = () => {
   const {
@@ -40,16 +41,15 @@ export const TravelSicknessScreen: React.FC = () => {
   const { travel, sickness } = currentLog;
   const isTravelLong = travel.isTravelling && travel.hours > config.travelThresholdHours;
 
-  const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!isEditable) {
       alert("🔒 LOCKED: You can only upload medical proof for TODAY'S checklist.");
       return;
     }
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
+    const rawFile = e.target.files?.[0];
+    if (rawFile) {
+      try {
+        const { file, base64 } = await compressImage(rawFile, 1400, 0.85);
         let finalUrl = base64;
 
         try {
@@ -64,7 +64,7 @@ export const TravelSicknessScreen: React.FC = () => {
           console.warn('Fallback to base64 for medical proof:', err);
         }
 
-        updateCurrentLog(prev => ({
+        await updateCurrentLog(prev => ({
           ...prev,
           sickness: {
             ...prev.sickness,
@@ -77,8 +77,9 @@ export const TravelSicknessScreen: React.FC = () => {
             status: isAdmin || adminOverrideMode ? 'approved' : 'pending',
           },
         }));
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('Medical proof processing error:', err);
+      }
     }
   };
 

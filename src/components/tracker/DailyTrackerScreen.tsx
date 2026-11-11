@@ -34,6 +34,7 @@ import {
 } from '../../services/rulesEngine';
 import { TaskState, ActivityType } from '../../types';
 import { supabaseService } from '../../services/supabaseService';
+import { compressImage } from '../../services/imageCompression';
 
 interface DailyTrackerScreenProps {
   initialTaskId?: keyof TaskState;
@@ -63,17 +64,16 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
   const paEval = evaluatePhysicalActivity(tasks.physicalActivity, config);
   const { allCompleted, completedCount, totalCount } = validateDayTasks(currentLog, config);
 
-  // Photo uploader
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Photo uploader with automatic mobile image compression
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!isEditable) {
       alert("🔒 LOCKED: You can only upload progress photos for TODAY'S checklist.");
       return;
     }
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
+    const rawFile = e.target.files?.[0];
+    if (rawFile) {
+      try {
+        const { file, base64 } = await compressImage(rawFile, 1200, 0.8);
         setPhotoPreview(base64);
 
         let finalUrl = base64;
@@ -86,10 +86,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
           );
           if (cloudUrl) finalUrl = cloudUrl;
         } catch (err) {
-          console.warn('Fallback to base64 for photo:', err);
+          console.warn('Fallback to compressed base64 for photo:', err);
         }
 
-        updateCurrentLog(prev => ({
+        await updateCurrentLog(prev => ({
           ...prev,
           tasks: {
             ...prev.tasks,
@@ -100,8 +100,9 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = () => {
             },
           },
         }));
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('Photo compression/upload error:', err);
+      }
     }
   };
 
