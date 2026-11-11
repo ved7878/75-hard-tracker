@@ -1,5 +1,5 @@
 import { ChallengeConfig, DailyLog, UserProfile } from '../types';
-import { DEFAULT_CONFIG } from './rulesEngine';
+import { DEFAULT_CONFIG, normalizeConfig } from './rulesEngine';
 
 const CONFIG_KEY = '75hard_challenge_config';
 const USERS_KEY = '75hard_users_list';
@@ -30,7 +30,7 @@ export const storage = {
     try {
       const stored = localStorage.getItem(CONFIG_KEY);
       if (stored) {
-        return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
+        return normalizeConfig(JSON.parse(stored));
       }
     } catch (e) {
       console.error('Failed to load config from localStorage', e);

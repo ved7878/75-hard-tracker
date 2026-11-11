@@ -18,14 +18,18 @@ import {
   validateDayTasks,
   isDateEditable,
   calculateSquadDepositLedger,
+  getDayNumber,
+  normalizeConfig,
+  isWakeUpCheckInOpen,
+  currentTimeHHMM,
 } from '../services/rulesEngine';
 import { supabaseService } from '../services/supabaseService';
 import { sound } from '../services/audio';
-import { setupDailyReminder } from '../services/notifications';
+import { setupDailyReminder, getReminderPrefs } from '../services/notifications';
 
 interface ChallengeContextType {
   config: ChallengeConfig;
-  updateConfig: (patch: Partial<ChallengeConfig>) => Promise<void>;
+  updateConfig: (patch: Partial<ChallengeConfig>) => Promise<{ success: boolean; message?: string }>;
   // Auth & Multi-user
   currentUser: UserProfile | null;
   users: UserProfile[];
@@ -81,7 +85,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [config, setConfigState] = useState<ChallengeConfig>(DEFAULT_CONFIG);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [allUsersLogs, setAllUsersLogs] = useState<Record<string, Record<string, DailyLog>>>({});
+  const [rawLogs, setAllUsersLogs] = useState<Record<string, Record<string, DailyLog>>>({});
   const [currentDate, setCurrentDate] = useState<string>(() => formatDate(new Date()));
   const [adminOverrideMode, setAdminOverrideMode] = useState<boolean>(false);
   const [isLoadingSession, setIsLoadingSession] = useState<boolean>(true);
@@ -90,6 +94,31 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const isTodayDate = currentDate === todayStr;
   const isAdmin = currentUser?.role === 'admin';
   const isEditable = isDateEditable(currentDate, config, isAdmin || adminOverrideMode);
+
+  // Day numbers stored inside logs were computed with whatever start date was active when the
+  // log was written. Always recompute them from the CURRENT start date so changing the start
+  // date in the admin panel is reflected everywhere immediately.
+  const allUsersLogs = useMemo(() => {
+    const out: Record<string, Record<string, DailyLog>> = {};
+    Object.entries(rawLogs).forEach(([uid, uLogs]) => {
+      const fixed: Record<string, DailyLog> = {};
+      Object.entries(uLogs || {}).forEach(([date, log]) => {
+        fixed[date] = { ...log, dayNumber: getDayNumber(log.date || date, config.startDate) };
+      });
+      out[uid] = fixed;
+    });
+    return out;
+  }, [rawLogs, config.startDate]);
+
+  // Push queued cloud saves when the app goes to the background / tab closes
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState === 'hidden') supabaseService.flushPendingSaves();
+    };
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', supabaseService.flushPendingSaves.bind(supabaseService));
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, []);
 
   // Active user's logs
   const logs = useMemo(() => {
@@ -176,7 +205,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         supabaseService.fetchAllLogs(),
       ]);
 
-      if (fetchedConfig) setConfigState(fetchedConfig);
+      if (fetchedConfig) setConfigState(normalizeConfig(fetchedConfig));
       if (fetchedUsers) setUsers(fetchedUsers);
       if (fetchedLogs) setAllUsersLogs(fetchedLogs);
     } catch (err) {
@@ -221,7 +250,8 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // 9 PM reminder
   useEffect(() => {
-    setupDailyReminder(config.reminderTime, config.reminderEnabled);
+    const prefs = getReminderPrefs({ enabled: config.reminderEnabled, time: config.reminderTime });
+    setupDailyReminder(prefs.time, prefs.enabled);
   }, [config.reminderTime, config.reminderEnabled]);
 
   // Unified Login (handles challenger or admin credentials seamlessly without separate login modules)
@@ -311,23 +341,42 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (!currentUser) return false;
 
       // Restrict challengers to editing today only!
-      if (!isAdmin && !adminOverrideMode && currentDate !== todayStr) {
-        alert('75 HARD Rule Violation: Incomplete days cannot be retro-filled! You can only edit TODAY.');
+      if (!isEditable) {
         return false;
       }
 
       const existing = logs[currentDate] || createDefaultLog(currentDate, config, currentUser.id);
+      const before = validateDayTasks(existing, config);
       const updated = updater(existing);
+
+      // Wake-up check-in window: challengers can only check in until target + buffer
+      // (e.g. 6:10 AM), and the time recorded is the real clock time – not a typed one.
+      // After the window closes, only the admin can change the wake-up habit.
+      if (!isAdmin && JSON.stringify(existing.tasks.wakeUp) !== JSON.stringify(updated.tasks.wakeUp)) {
+        if (!isWakeUpCheckInOpen(updated, config)) {
+          updated.tasks = { ...updated.tasks, wakeUp: existing.tasks.wakeUp };
+        } else if (updated.tasks.wakeUp.completed) {
+          updated.tasks = { ...updated.tasks, wakeUp: { ...updated.tasks.wakeUp, actualTime: currentTimeHHMM() } };
+        } else {
+          updated.tasks = { ...updated.tasks, wakeUp: { ...updated.tasks.wakeUp, actualTime: '' } };
+        }
+      }
 
       updated.userId = currentUser.id;
       updated.id = `${currentUser.id}_${currentDate}`;
+      updated.dayNumber = getDayNumber(currentDate, config.startDate);
       updated.status = computeDayStatus(updated, config);
-      const { failedNames, allCompleted } = validateDayTasks(updated, config);
+      const { failedNames, allCompleted, completedCount } = validateDayTasks(updated, config);
       updated.failedTasks = allCompleted ? [] : failedNames;
-      if (allCompleted && !updated.completedAt) {
-        updated.completedAt = new Date().toISOString();
+
+      // Feedback only when progress actually changes (not on every keystroke)
+      if (allCompleted && !before.allCompleted) {
+        if (!updated.completedAt) updated.completedAt = new Date().toISOString();
         sound.playDayComplete();
-      } else {
+        try {
+          confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 }, colors: ['#f43f5e', '#10b981', '#f59e0b', '#ffffff'] });
+        } catch (e) {}
+      } else if (completedCount > before.completedCount) {
         sound.playTaskCheck();
       }
       updated.updatedAt = new Date().toISOString();
@@ -341,18 +390,18 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
       }));
 
-      // Persist to Supabase / Storage
-      await supabaseService.saveLog(currentUser.id, updated);
+      // Persist locally now, cloud write is batched
+      supabaseService.saveLogDebounced(currentUser.id, updated);
       return true;
     },
-    [currentUser, logs, currentDate, config, isAdmin, adminOverrideMode, todayStr]
+    [currentUser, logs, currentDate, config, isEditable, isAdmin]
   );
 
   // Admin: Update System Config
   const updateConfig = async (patch: Partial<ChallengeConfig>) => {
-    const updated = { ...config, ...patch };
+    const updated = normalizeConfig({ ...config, ...patch });
     setConfigState(updated);
-    await supabaseService.saveConfig(updated);
+    return supabaseService.saveConfig(updated);
   };
 
   // Admin: Add Challenger
@@ -401,6 +450,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     updated.userId = userId;
     updated.id = `${userId}_${dateStr}`;
+    updated.dayNumber = getDayNumber(dateStr, config.startDate);
     updated.status = computeDayStatus(updated, config);
     const { failedNames } = validateDayTasks(updated, config);
     updated.failedTasks = failedNames;
@@ -518,10 +568,12 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   if (isLoadingSession) {
     return (
-      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center text-white">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold tracking-wider uppercase text-slate-400">Loading 75 HARD System...</p>
+      <div className="min-h-[100dvh] bg-ink-950 flex items-center justify-center text-white">
+        <div className="text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center font-black text-lg mx-auto animate-pulse">
+            75
+          </div>
+          <p className="text-sm font-medium text-slate-400">Loading your challenge…</p>
         </div>
       </div>
     );

@@ -23,8 +23,8 @@ export function sendLocalNotification(title: string, options?: NotificationOptio
 
   try {
     new Notification(title, {
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
       tag: '75hard-reminder',
       ...options,
     });
@@ -51,12 +51,13 @@ export function setupDailyReminder(reminderTime: string = '21:00', isEnabled: bo
 
     if (currentTimeStr === reminderTime) {
       const lastSentDate = localStorage.getItem('75hard_last_reminder_date');
-      const todayDateStr = now.toISOString().slice(0, 10);
+      // local date (toISOString would use UTC and could skip/duplicate a day in IST)
+      const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
       if (lastSentDate !== todayDateStr) {
         localStorage.setItem('75hard_last_reminder_date', todayDateStr);
         sendLocalNotification('75 HARD – Daily Accountability Check!', {
-          body: 'It is 9:00 PM. Have you logged your daily habits, workouts, reading, and photo? Do not let your streak reset to 0!',
+          body: 'Have you logged every habit, your workout and your photo? Finish before midnight to keep your streak.',
           requireInteraction: true,
         });
       }
@@ -68,3 +69,36 @@ export function setupDailyReminder(reminderTime: string = '21:00', isEnabled: bo
   checkAndNotify();
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Per-device reminder preferences                                     */
+/* Reminders are personal, so they live on this device instead of in  */
+/* the shared challenge config (which would change it for everyone).   */
+/* ------------------------------------------------------------------ */
+
+const REMINDER_PREFS_KEY = '75hard_reminder_prefs';
+
+export interface ReminderPrefs {
+  enabled: boolean;
+  time: string;
+}
+
+export function notificationPermission(): NotificationPermission | 'unsupported' {
+  return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+}
+
+export function getReminderPrefs(fallback: ReminderPrefs = { enabled: true, time: '21:00' }): ReminderPrefs {
+  try {
+    const raw = localStorage.getItem(REMINDER_PREFS_KEY);
+    if (raw) return { ...fallback, ...JSON.parse(raw) };
+  } catch (e) {}
+  // Never show the reminder as "on" before the phone has actually allowed notifications
+  return { ...fallback, enabled: fallback.enabled && notificationPermission() === 'granted' };
+}
+
+export function saveReminderPrefs(prefs: ReminderPrefs): void {
+  try {
+    localStorage.setItem(REMINDER_PREFS_KEY, JSON.stringify(prefs));
+  } catch (e) {}
+  setupDailyReminder(prefs.time, prefs.enabled);
+}

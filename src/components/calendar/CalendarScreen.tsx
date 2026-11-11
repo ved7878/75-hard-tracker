@@ -1,227 +1,161 @@
 import React, { useState, useMemo } from 'react';
-import {
-  CheckCircle2,
-  XCircle,
-  ShieldAlert,
-  Calendar,
-  Sparkles,
-  Info,
-  Clock,
-} from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
-  parseDate,
   formatDate,
   createDefaultLog,
   computeDayStatus,
-  isToday,
+  addDays,
+  formatPrettyDate,
+  parseDate,
+  getDayNumber,
 } from '../../services/rulesEngine';
 import { DayDetailModal } from './DayDetailModal';
-import { DailyLog, DayStatus } from '../../types';
+import { DailyLog } from '../../types';
+import { ScreenTitle, Card, ProgressBar } from '../ui';
 
 interface CalendarScreenProps {
   onNavigateToDate: (date: string) => void;
 }
 
+type CellState = 'done' | 'exempt' | 'missed' | 'today' | 'upcoming';
+
+const cellClass: Record<CellState, string> = {
+  done: 'bg-emerald-500 text-ink-950 font-bold',
+  exempt: 'bg-sky-500/80 text-ink-950 font-bold',
+  missed: 'bg-rose-500/20 text-rose-300',
+  today: 'bg-ink-850 text-white ring-2 ring-rose-500 font-bold',
+  upcoming: 'bg-white/[0.04] text-zinc-500',
+};
+
+const legend: Array<[string, string]> = [
+  ['bg-emerald-500', 'Done'],
+  ['bg-rose-500/40', 'Missed'],
+  ['bg-sky-500/80', 'Exempt'],
+  ['ring-2 ring-rose-500 bg-ink-850', 'Today'],
+  ['bg-white/[0.08]', 'Upcoming'],
+];
+
 export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate }) => {
-  const { logs, config, currentDate, setCurrentDate, isAdmin, adminOverrideMode } = useChallenge();
-  const [selectedDayLog, setSelectedDayLog] = useState<DailyLog | null>(null);
+  const { logs, config, setCurrentDate, currentUser } = useChallenge();
+  const [selected, setSelected] = useState<DailyLog | null>(null);
+  const todayStr = formatDate(new Date());
 
-  // Generate all 75 days based on config
-  const daysList = useMemo(() => {
-    const list: {
-      dayNumber: number;
-      dateStr: string;
-      displayDate: string;
-      log: DailyLog;
-      status: DayStatus;
-      isTodayDate: boolean;
-    }[] = [];
-
-    const startD = parseDate(config.startDate);
-    const todayStr = formatDate(new Date());
-
-    for (let i = 0; i < config.durationDays; i++) {
-      const d = new Date(startD);
-      d.setDate(d.getDate() + i);
-      const dateStr = formatDate(d);
-
-      const log = logs[dateStr] || createDefaultLog(dateStr, config);
+  const days = useMemo(() => {
+    return Array.from({ length: config.durationDays }, (_, i) => {
+      const dateStr = addDays(config.startDate, i);
+      const log = logs[dateStr] || createDefaultLog(dateStr, config, currentUser?.id);
       const status = computeDayStatus(log, config);
-      const isTodayDate = dateStr === todayStr;
-
-      const displayDate = d.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-
-      list.push({
-        dayNumber: i + 1,
-        dateStr,
-        displayDate,
-        log,
-        status,
-        isTodayDate,
-      });
-    }
-
-    return list;
-  }, [logs, config]);
-
-  // Aggregate stats
-  const stats = useMemo(() => {
-    let completed = 0;
-    let missed = 0;
-    let exempt = 0;
-    let future = 0;
-
-    daysList.forEach(item => {
-      if (item.status === 'completed') completed++;
-      else if (item.status === 'exempt') exempt++;
-      else if (item.status === 'incomplete' && !item.isTodayDate) missed++;
-      else future++;
+      const isToday = dateStr === todayStr;
+      let state: CellState = 'upcoming';
+      if (status === 'completed') state = 'done';
+      else if (status === 'exempt') state = 'exempt';
+      else if (isToday) state = 'today';
+      else if (dateStr < todayStr) state = 'missed';
+      return { dayNumber: i + 1, dateStr, log: { ...log, dayNumber: getDayNumber(dateStr, config.startDate) }, state, isToday };
     });
+  }, [logs, config, todayStr, currentUser?.id]);
 
-    return { completed, missed, exempt, future, total: config.durationDays };
-  }, [daysList, config.durationDays]);
+  const counts = days.reduce(
+    (acc, d) => {
+      acc[d.state]++;
+      return acc;
+    },
+    { done: 0, exempt: 0, missed: 0, today: 0, upcoming: 0 } as Record<CellState, number>
+  );
+  const secured = counts.done + counts.exempt;
+
+  // Pad the grid so day 1 sits under the right weekday (Monday first)
+  const startWeekday = (parseDate(config.startDate).getDay() + 6) % 7;
+  const weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
   return (
-    <div className="space-y-4 pb-8">
-      {/* Header Info */}
-      <div className="p-4 rounded-xl glass-card border border-white/[0.08]">
-        {(isAdmin || adminOverrideMode) && (
-          <div className="mb-2 px-2.5 py-1 rounded-md bg-purple-950/40 border border-purple-500/40 text-[11px] text-purple-300 font-bold flex items-center justify-between">
-            <span>⚡ Admin Override Active: You can edit ANY day!</span>
-            <span className="text-[10px] bg-purple-500/20 px-1 rounded">MASTER ACCESS</span>
-          </div>
-        )}
-        <div className="flex items-center justify-between mb-2">
+    <div className="space-y-4">
+      <ScreenTitle
+        title="Calendar"
+        subtitle={`${formatPrettyDate(config.startDate, { day: 'numeric', month: 'short' })} – ${formatPrettyDate(config.endDate, {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })}`}
+      />
+
+      <Card>
+        <div className="flex items-end justify-between">
           <div>
-            <h2 className="text-base font-extrabold text-white">75-Day Challenge Matrix</h2>
-            <p className="text-xs text-slate-400">
-              {config.startDate} to {config.endDate}
+            <p className="text-[13px] text-zinc-500">Days secured</p>
+            <p className="text-3xl font-bold text-white tabular">
+              {secured}
+              <span className="text-base font-semibold text-zinc-500">/{config.durationDays}</span>
             </p>
           </div>
-          <div className="text-right">
-            <span className="text-xs font-bold text-rose-400">Zero Compromise</span>
-            <p className="text-[10px] text-slate-500">Every single day matters</p>
+          <div className="flex gap-5 text-right">
+            <div>
+              <p className="text-lg font-bold text-rose-400 tabular">{counts.missed}</p>
+              <p className="text-[12px] text-zinc-500">Missed</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-sky-400 tabular">{counts.exempt}</p>
+              <p className="text-[12px] text-zinc-500">Exempt</p>
+            </div>
           </div>
         </div>
+        <ProgressBar value={(secured / config.durationDays) * 100} tone="emerald" className="mt-3" />
+      </Card>
 
-        {/* Status Pills */}
-        <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-white/[0.05] text-center">
-          <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <span className="text-xs font-extrabold text-emerald-400">{stats.completed}</span>
-            <p className="text-[10px] text-emerald-300/70 font-semibold">Done</p>
-          </div>
-          <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
-            <span className="text-xs font-extrabold text-rose-400">{stats.missed}</span>
-            <p className="text-[10px] text-rose-300/70 font-semibold">Missed</p>
-          </div>
-          <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <span className="text-xs font-extrabold text-blue-400">{stats.exempt}</span>
-            <p className="text-[10px] text-blue-300/70 font-semibold">Exempt</p>
-          </div>
-          <div className="p-1.5 rounded-lg bg-white/5 border border-white/10">
-            <span className="text-xs font-extrabold text-slate-300">{stats.future}</span>
-            <p className="text-[10px] text-slate-500 font-semibold">Pending</p>
-          </div>
+      <Card padded={false} className="p-3">
+        <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+          {weekdays.map((w, i) => (
+            <span key={i} className="text-center text-2xs font-semibold text-zinc-600">
+              {w}
+            </span>
+          ))}
         </div>
-      </div>
-
-      {/* Legend */}
-      <div className="flex items-center justify-between px-1 text-[11px] text-slate-400">
-        <div className="flex items-center space-x-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-          <span>Completed</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-          <span>Missed/Reset</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-          <span>Exempt</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <div className="w-2.5 h-2.5 rounded-full border border-white" />
-          <span>Today</span>
-        </div>
-      </div>
-
-      {/* 75-Day Grid */}
-      <div className="grid grid-cols-5 gap-2">
-        {daysList.map(item => {
-          const isDone = item.status === 'completed';
-          const isExempt = item.status === 'exempt';
-          const isMissed = item.status === 'incomplete' && !item.isTodayDate;
-          const isFuture = item.status === 'future';
-
-          return (
-            <button
-              key={item.dayNumber}
-              type="button"
-              onClick={() => setSelectedDayLog(item.log)}
-              className={`relative p-2 rounded-xl flex flex-col items-center justify-between aspect-square border transition-all active:scale-90 ${
-                item.isTodayDate
-                  ? 'border-2 border-white bg-rose-950/40 shadow-glow-red ring-2 ring-rose-500/50'
-                  : isDone
-                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200 hover:border-emerald-500'
-                  : isExempt
-                  ? 'bg-blue-950/30 border-blue-500/40 text-blue-200 hover:border-blue-500'
-                  : isMissed
-                  ? 'bg-rose-950/30 border-rose-500/40 text-rose-300 hover:border-rose-500'
-                  : 'bg-white/[0.02] border-white/[0.06] text-slate-500 hover:border-white/20'
-              }`}
-            >
-              {/* Day Badge */}
-              <div className="w-full flex items-center justify-between text-[10px]">
-                <span className={`font-mono font-bold ${item.isTodayDate ? 'text-white' : ''}`}>
-                  D{item.dayNumber}
-                </span>
-                {item.isTodayDate && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+        <div className="grid grid-cols-7 gap-1.5">
+          {Array.from({ length: startWeekday }).map((_, i) => (
+            <span key={`pad-${i}`} />
+          ))}
+          {days.map(d => {
+            const date = parseDate(d.dateStr);
+            const showMonth = d.dayNumber === 1 || date.getDate() === 1;
+            return (
+              <button
+                key={d.dateStr}
+                onClick={() => setSelected(d.log)}
+                aria-label={`Day ${d.dayNumber}, ${formatPrettyDate(d.dateStr)}`}
+                className={`relative aspect-square rounded-lg flex items-center justify-center text-[13px] tabular active:scale-90 transition ${cellClass[d.state]} ${
+                  d.isToday && d.state !== 'today' ? 'ring-2 ring-white ring-offset-2 ring-offset-ink-900' : ''
+                }`}
+              >
+                {date.getDate()}
+                {showMonth && (
+                  <span className="absolute top-0.5 inset-x-0 text-center text-[8px] leading-none font-bold uppercase opacity-80">
+                    {date.toLocaleDateString('en-IN', { month: 'short' })}
+                  </span>
                 )}
-              </div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
 
-              {/* Status Icon */}
-              <div className="my-0.5">
-                {isDone ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 fill-emerald-500/20" />
-                ) : isExempt ? (
-                  <ShieldAlert className="w-4 h-4 text-blue-400" />
-                ) : isMissed ? (
-                  <XCircle className="w-4 h-4 text-rose-500 fill-rose-500/20" />
-                ) : item.isTodayDate ? (
-                  <Clock className="w-4 h-4 text-amber-400" />
-                ) : (
-                  <div className="w-2 h-2 rounded-full bg-white/10" />
-                )}
-              </div>
-
-              {/* Date string */}
-              <span className="text-[9px] font-medium text-slate-400 truncate w-full text-center">
-                {item.displayDate}
-              </span>
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-[12px] text-zinc-400">
+        {legend.map(([c, l]) => (
+          <span key={l} className="flex items-center gap-1.5">
+            <span className={`w-3 h-3 rounded ${c}`} /> {l}
+          </span>
+        ))}
       </div>
+      <p className="text-center text-[12px] text-zinc-600">Tap a day to see details</p>
 
-      {/* Selected Day Modal */}
-      {selectedDayLog && (
-        <DayDetailModal
-          log={selectedDayLog}
-          config={config}
-          isOpen={Boolean(selectedDayLog)}
-          onClose={() => setSelectedDayLog(null)}
-          onJumpToDate={date => {
-            setCurrentDate(date);
-            onNavigateToDate(date);
-          }}
-        />
-      )}
+      <DayDetailModal
+        log={selected}
+        config={config}
+        onClose={() => setSelected(null)}
+        onJumpToDate={date => {
+          setCurrentDate(date);
+          onNavigateToDate(date);
+        }}
+      />
     </div>
   );
 };
-

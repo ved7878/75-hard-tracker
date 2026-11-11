@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { X, Camera, ChevronLeft, ChevronRight, Download, Sparkles, SplitSquareVertical } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
-import { parseDate, formatDate } from '../../services/rulesEngine';
+import { formatPrettyDate, getDayNumber } from '../../services/rulesEngine';
+import { Segmented, Sheet } from '../ui';
 
 interface PhotoGalleryModalProps {
   isOpen: boolean;
@@ -9,224 +10,137 @@ interface PhotoGalleryModalProps {
 }
 
 export const PhotoGalleryModal: React.FC<PhotoGalleryModalProps> = ({ isOpen, onClose }) => {
-  const { allUsersLogs, users, currentUser } = useChallenge();
+  const { allUsersLogs, users, currentUser, config } = useChallenge();
   const challengers = users.filter(u => u.role !== 'admin');
-  const [selectedUserId, setSelectedUserId] = useState<string>(currentUser?.id || 'user_1');
-  const [sliderPosition, setSliderPosition] = useState<number>(50);
-  const [compareMode, setCompareMode] = useState<boolean>(false);
-  const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null);
+  const defaultId = challengers.some(c => c.id === currentUser?.id) ? currentUser!.id : challengers[0]?.id || 'user_1';
+  const [selectedUserId, setSelectedUserId] = useState<string>(defaultId);
+  const [mode, setMode] = useState<'grid' | 'compare'>('grid');
+  const [slider, setSlider] = useState(50);
+  const [active, setActive] = useState<number | null>(null);
 
-  const targetLogs = allUsersLogs[selectedUserId] || {};
-
-  // Extract all photos sorted chronologically
-  const photoEntries = useMemo(() => {
-    return Object.values(targetLogs)
+  const photos = useMemo(() => {
+    const logs = allUsersLogs[selectedUserId] || {};
+    return Object.values(logs)
       .filter(l => Boolean(l.tasks?.progressPhoto?.photoUrl))
       .sort((a, b) => a.date.localeCompare(b.date))
       .map(l => ({
         date: l.date,
-        dayNumber: l.dayNumber,
+        dayNumber: getDayNumber(l.date, config.startDate),
         url: l.tasks.progressPhoto.photoUrl!,
-        formattedDate: new Date(l.date + 'T00:00:00').toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        }),
       }));
-  }, [targetLogs]);
+  }, [allUsersLogs, selectedUserId, config.startDate]);
 
   if (!isOpen) return null;
-
-  const firstPhoto = photoEntries[0];
-  const latestPhoto = photoEntries[photoEntries.length - 1];
+  const first = photos[0];
+  const latest = photos[photos.length - 1];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in text-xs">
-      <div className="w-full max-w-lg bg-[#121318] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="p-4 border-b border-white/[0.08] flex items-center justify-between bg-black/50">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-              <Camera className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-white">75 HARD Transformation Gallery</h3>
-              <p className="text-[11px] text-slate-400">Daily physique evolution ({photoEntries.length} photos)</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
+    <Sheet open onClose={onClose} title="Progress photos" subtitle={`${photos.length} photo${photos.length === 1 ? '' : 's'}`} size="lg">
+      <div className="space-y-4">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+          {challengers.map(c => (
+            <button
+              key={c.id}
+              onClick={() => {
+                setSelectedUserId(c.id);
+                setActive(null);
+              }}
+              className={`h-9 px-3 rounded-full text-[13px] font-semibold whitespace-nowrap flex items-center gap-1.5 ${
+                selectedUserId === c.id ? 'bg-white text-ink-950' : 'bg-white/[0.06] text-zinc-300'
+              }`}
+            >
+              {c.avatar} {c.name}
+            </button>
+          ))}
         </div>
 
-        {/* Challenger Switcher Tabs & Mode Toggles */}
-        <div className="p-3 border-b border-white/[0.06] bg-black/30 flex items-center justify-between gap-2">
-          <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar">
-            {challengers.map(c => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedUserId(c.id)}
-                className={`py-1 px-2.5 rounded-lg font-bold text-xs flex items-center space-x-1.5 transition-all ${
-                  selectedUserId === c.id
-                    ? 'bg-rose-600 text-white shadow-sm'
-                    : 'bg-white/5 text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>{c.avatar}</span>
-                <span>{c.name}</span>
+        {photos.length >= 2 && (
+          <Segmented
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'grid', label: 'All photos' },
+              { value: 'compare', label: 'First vs latest' },
+            ]}
+          />
+        )}
+
+        {photos.length === 0 ? (
+          <div className="py-12 text-center space-y-2">
+            <Camera className="w-8 h-8 mx-auto text-zinc-600" />
+            <p className="text-[15px] font-semibold text-zinc-300">No photos yet</p>
+            <p className="text-sm text-zinc-500">Add your daily photo in the checklist.</p>
+          </div>
+        ) : mode === 'compare' && first && latest ? (
+          <div className="space-y-2">
+            <div className="relative rounded-2xl overflow-hidden aspect-[4/5] w-full select-none bg-black">
+              <img src={latest.url} alt="Latest" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - slider}% 0 0)` }}>
+                <img src={first.url} alt="First" className="absolute inset-0 w-full h-full object-cover" />
+              </div>
+              <span className="absolute top-3 left-3 chip bg-black/70 text-white">Day {first.dayNumber}</span>
+              <span className="absolute top-3 right-3 chip bg-black/70 text-white">Day {latest.dayNumber}</span>
+              <div className="absolute inset-y-0 w-0.5 bg-white pointer-events-none" style={{ left: `${slider}%` }} />
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={slider}
+                onChange={e => setSlider(Number(e.target.value))}
+                aria-label="Compare slider"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize"
+              />
+            </div>
+            <p className="text-center text-[12px] text-zinc-500">Drag across the photo to compare</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5">
+            {photos.map((p, i) => (
+              <button key={p.date} onClick={() => setActive(i)} className="relative aspect-[3/4] rounded-lg overflow-hidden bg-black">
+                <img src={p.url} alt={`Day ${p.dayNumber}`} className="w-full h-full object-cover" loading="lazy" />
+                <span className="absolute bottom-1 left-1 chip h-5 bg-black/70 text-white">D{p.dayNumber}</span>
               </button>
             ))}
           </div>
-
-          {photoEntries.length >= 2 && (
-            <button
-              onClick={() => setCompareMode(!compareMode)}
-              className={`py-1 px-2 rounded-lg text-[11px] font-bold flex items-center space-x-1 shrink-0 transition-all ${
-                compareMode
-                  ? 'bg-amber-500 text-black font-extrabold'
-                  : 'bg-white/10 text-slate-300 hover:text-white'
-              }`}
-            >
-              <SplitSquareVertical className="w-3.5 h-3.5" />
-              <span>{compareMode ? 'Grid View' : 'Compare Day 1 vs Now'}</span>
-            </button>
-          )}
-        </div>
-
-        {/* Gallery Content */}
-        <div className="p-4 overflow-y-auto flex-1 no-scrollbar space-y-4">
-          {photoEntries.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 space-y-2">
-              <Camera className="w-8 h-8 mx-auto text-slate-600" />
-              <p className="font-semibold text-slate-300 text-sm">No Progress Photos Logged Yet</p>
-              <p className="text-xs text-slate-500">
-                Upload your daily physique picture in the Daily Tracker to see your 75-day transformation unfold!
-              </p>
-            </div>
-          ) : compareMode && firstPhoto && latestPhoto ? (
-            /* DAY 1 VS NOW COMPARISON SLIDER */
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                <span className="text-amber-400">Day {firstPhoto.dayNumber} ({firstPhoto.formattedDate})</span>
-                <span className="text-emerald-400">Day {latestPhoto.dayNumber} ({latestPhoto.formattedDate})</span>
-              </div>
-
-              {/* Side by side compare */}
-              <div className="relative rounded-2xl overflow-hidden aspect-[4/5] max-h-[50vh] border border-white/10 select-none mx-auto w-full max-w-sm">
-                <img
-                  src={latestPhoto.url}
-                  alt="Latest"
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-                <div
-                  className="absolute inset-y-0 left-0 overflow-hidden"
-                  style={{ width: `${sliderPosition}%` }}
-                >
-                  <img
-                    src={firstPhoto.url}
-                    alt="First"
-                    className="absolute inset-0 w-full h-full object-cover max-w-none"
-                    style={{ width: '100%', height: '100%' }}
-                  />
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-[10px] font-black text-amber-400 border border-amber-500/30">
-                    DAY {firstPhoto.dayNumber}
-                  </div>
-                </div>
-
-                <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 text-[10px] font-black text-emerald-400 border border-emerald-500/30">
-                  DAY {latestPhoto.dayNumber}
-                </div>
-
-                {/* Slider divider line */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-white shadow-2xl cursor-ew-resize flex items-center justify-center"
-                  style={{ left: `${sliderPosition}%` }}
-                >
-                  <div className="w-6 h-6 rounded-full bg-white text-black flex items-center justify-center font-bold text-[9px] shadow-lg">
-                    ⇄
-                  </div>
-                </div>
-
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={sliderPosition}
-                  onChange={e => setSliderPosition(Number(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize"
-                />
-              </div>
-
-              <p className="text-center text-[11px] text-slate-400">
-                Drag slider to compare Day {firstPhoto.dayNumber} vs Day {latestPhoto.dayNumber}
-              </p>
-            </div>
-          ) : (
-            /* PHOTO GRID VIEW */
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {photoEntries.map((photo, index) => (
-                <div
-                  key={photo.date}
-                  onClick={() => setActivePhotoIndex(index)}
-                  className="relative rounded-xl overflow-hidden aspect-[3/4] border border-white/10 group cursor-pointer bg-black/40 hover:border-rose-500/50 transition-all"
-                >
-                  <img
-                    src={photo.url}
-                    alt={`Day ${photo.dayNumber}`}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-black text-white border border-white/20">
-                    Day {photo.dayNumber}
-                  </div>
-                  <div className="absolute bottom-1.5 left-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-medium text-slate-300 text-center truncate">
-                    {photo.formattedDate}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* High-res Lightbox Modal */}
-        {activePhotoIndex !== null && photoEntries[activePhotoIndex] && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/95 backdrop-blur-md">
-            <button
-              onClick={() => setActivePhotoIndex(null)}
-              className="absolute top-4 right-4 p-2 rounded-full bg-black/80 text-white hover:bg-black z-50"
-            >
-              <X className="w-6 h-6" />
-            </button>
-
-            <button
-              onClick={() => setActivePhotoIndex(Math.max(0, activePhotoIndex - 1))}
-              disabled={activePhotoIndex === 0}
-              className="absolute left-2 p-2 rounded-full bg-black/80 text-white hover:bg-black disabled:opacity-20 z-50"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-
-            <div className="max-w-md w-full max-h-[85vh] flex flex-col items-center">
-              <img
-                src={photoEntries[activePhotoIndex].url}
-                alt="Enlarged"
-                className="w-full max-h-[75vh] object-contain rounded-2xl"
-              />
-              <div className="mt-3 text-center">
-                <span className="text-sm font-extrabold text-white">
-                  Day {photoEntries[activePhotoIndex].dayNumber} ({photoEntries[activePhotoIndex].formattedDate})
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setActivePhotoIndex(Math.min(photoEntries.length - 1, activePhotoIndex + 1))}
-              disabled={activePhotoIndex === photoEntries.length - 1}
-              className="absolute right-2 p-2 rounded-full bg-black/80 text-white hover:bg-black disabled:opacity-20 z-50"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          </div>
         )}
       </div>
-    </div>
+
+      {active !== null && photos[active] && (
+        <div className="fixed inset-0 z-[70] bg-black flex flex-col">
+          <div className="flex items-center justify-between px-4 h-14 pt-safe">
+            <span className="text-[15px] font-semibold text-white">
+              Day {photos[active].dayNumber} · {formatPrettyDate(photos[active].date)}
+            </span>
+            <button onClick={() => setActive(null)} aria-label="Close" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center px-2">
+            <img src={photos[active].url} alt="Enlarged" className="max-w-full max-h-full object-contain" />
+          </div>
+          <div className="flex items-center justify-between px-4 h-20 pb-safe">
+            <button
+              disabled={active === 0}
+              onClick={() => setActive(active - 1)}
+              className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-30"
+              aria-label="Previous photo"
+            >
+              <ChevronLeft className="w-6 h-6 text-white" />
+            </button>
+            <span className="text-sm text-zinc-400 tabular">
+              {active + 1} / {photos.length}
+            </span>
+            <button
+              disabled={active === photos.length - 1}
+              onClick={() => setActive(active + 1)}
+              className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-30"
+              aria-label="Next photo"
+            >
+              <ChevronRight className="w-6 h-6 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+    </Sheet>
   );
 };

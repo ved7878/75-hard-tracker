@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { ChallengeProvider, useChallenge } from './context/ChallengeContext';
 import { Header } from './components/common/Header';
 import { BottomNav } from './components/common/BottomNav';
@@ -12,80 +13,86 @@ import { AdminPanelScreen } from './components/admin/AdminPanelScreen';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { TaskState } from './types';
 
+const SUB_SCREENS = ['travel', 'admin'];
+const TAB_LABELS: Record<string, string> = {
+  dashboard: 'Today',
+  tracker: 'Checklist',
+  calendar: 'Calendar',
+  analytics: 'Stats',
+  settings: 'More',
+};
+
 const MainAppContent: React.FC = () => {
   const { currentUser, isAdmin } = useChallenge();
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [activeTaskId, setActiveTaskId] = useState<keyof TaskState | undefined>(undefined);
+  const [activeTab, setActiveTabState] = useState<string>('dashboard');
+  const [focusTaskId, setFocusTaskId] = useState<keyof TaskState | undefined>(undefined);
+  const [returnTab, setReturnTab] = useState<string>('settings');
 
-  // Reset tab to dashboard whenever user changes or logs in
+  // Reset to Today on a new login. Admin previewing different challengers keeps the same
+  // session key, so switching people doesn't kick the admin out of the current screen.
+  const sessionKey = isAdmin ? 'admin' : currentUser?.id;
   useEffect(() => {
-    setActiveTab('dashboard');
-  }, [currentUser?.id]);
+    setActiveTabState('dashboard');
+  }, [sessionKey]);
 
-  // Security guard: If a non-admin user lands on or attempts to view 'admin', immediately redirect to 'dashboard'
+  // Security guard: non-admins can never land on the admin screen
   useEffect(() => {
-    if (!isAdmin && activeTab === 'admin') {
-      setActiveTab('dashboard');
-    }
+    if (!isAdmin && activeTab === 'admin') setActiveTabState('dashboard');
   }, [isAdmin, activeTab]);
 
-  // AUTHENTICATION GATE: User must log in first before ANY content is visible!
+  const setActiveTab = (tab: string) => {
+    if (tab !== 'tracker') setFocusTaskId(undefined);
+    // Remember where a sub-screen was opened from so "Back" goes there
+    if (SUB_SCREENS.includes(tab) && !SUB_SCREENS.includes(activeTab)) setReturnTab(activeTab);
+    setActiveTabState(tab);
+    window.scrollTo({ top: 0 });
+  };
+
   if (!currentUser) {
     return <LoginScreen />;
   }
 
-  const handleOpenTaskDetails = (taskId?: keyof TaskState) => {
-    setActiveTaskId(taskId);
-    setActiveTab('tracker');
+  const openTask = (taskId?: keyof TaskState) => {
+    setFocusTaskId(taskId);
+    setActiveTabState('tracker');
+    if (!taskId) window.scrollTo({ top: 0 });
   };
 
-  const handleNavigateToDate = (dateStr: string) => {
-    setActiveTab('tracker');
-  };
+  const parent = SUB_SCREENS.includes(activeTab) ? returnTab : undefined;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-slate-100 flex flex-col font-sans">
-      {/* Top Header */}
+    <div className="min-h-[100dvh] bg-ink-950 text-zinc-100 flex flex-col font-sans">
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Main Screen Container - Highly Mobile Optimized */}
-      <main className="flex-1 w-full max-w-md mx-auto px-4 pt-3 safe-bottom">
-        {activeTab === 'dashboard' && (
-          <DashboardScreen
-            onNavigateTab={setActiveTab}
-            onOpenTaskDetails={handleOpenTaskDetails}
-          />
+      <main className="flex-1 w-full max-w-md mx-auto px-4 pt-4 pb-nav">
+        {parent && (
+          <button
+            onClick={() => setActiveTab(parent)}
+            className="-ml-1 mb-2 h-8 pr-2 inline-flex items-center gap-0.5 text-sm font-medium text-zinc-400 active:text-white"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            {TAB_LABELS[parent] || 'Back'}
+          </button>
         )}
-        {activeTab === 'tracker' && (
-          <DailyTrackerScreen initialTaskId={activeTaskId} />
-        )}
-        {activeTab === 'calendar' && (
-          <CalendarScreen onNavigateToDate={handleNavigateToDate} />
-        )}
+
+        {activeTab === 'dashboard' && <DashboardScreen onNavigateTab={setActiveTab} onOpenTaskDetails={openTask} />}
+        {activeTab === 'tracker' && <DailyTrackerScreen focusTaskId={focusTaskId} onNavigateTab={setActiveTab} />}
+        {activeTab === 'calendar' && <CalendarScreen onNavigateToDate={() => setActiveTab('tracker')} />}
         {activeTab === 'travel' && <TravelSicknessScreen />}
         {activeTab === 'analytics' && <AnalyticsScreen />}
-        {activeTab === 'settings' && <SettingsScreen />}
-        {activeTab === 'admin' && isAdmin && <AdminPanelScreen />}
-        {activeTab === 'admin' && !isAdmin && (
-          <DashboardScreen
-            onNavigateTab={setActiveTab}
-            onOpenTaskDetails={handleOpenTaskDetails}
-          />
-        )}
+        {activeTab === 'settings' && <SettingsScreen onNavigateTab={setActiveTab} />}
+        {activeTab === 'admin' && isAdmin && <AdminPanelScreen onNavigateTab={setActiveTab} />}
       </main>
 
-      {/* Mobile Bottom Navigation */}
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   );
 };
 
-export const App: React.FC = () => {
-  return (
-    <ChallengeProvider>
-      <MainAppContent />
-    </ChallengeProvider>
-  );
-};
+export const App: React.FC = () => (
+  <ChallengeProvider>
+    <MainAppContent />
+  </ChallengeProvider>
+);
 
 export default App;

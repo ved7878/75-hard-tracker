@@ -1,18 +1,7 @@
 import React from 'react';
-import {
-  Flame,
-  ShieldCheck,
-  AlertTriangle,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Lock,
-  ShieldAlert,
-  LogOut,
-  Unlock,
-} from 'lucide-react';
+import { Flame, ShieldCheck } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
-import { formatDate, parseDate, getDayNumber } from '../../services/rulesEngine';
+import { formatDate, formatPrettyDate, getChallengePhase } from '../../services/rulesEngine';
 
 interface HeaderProps {
   activeTab: string;
@@ -20,232 +9,92 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
-  const {
-    currentDate,
-    setCurrentDate,
-    streakStats,
-    config,
-    currentUser,
-    setCurrentUserId,
-    squadMembers,
-    isToday,
-    isAdmin,
-    adminOverrideMode,
-    pendingExceptions,
-    logout,
-  } = useChallenge();
+  const { config, currentUser, setCurrentUserId, squadMembers, isAdmin, pendingExceptions, streakStats } = useChallenge();
 
-  const handlePrevDay = () => {
-    const cur = parseDate(currentDate);
-    cur.setDate(cur.getDate() - 1);
-    setCurrentDate(formatDate(cur));
-  };
+  const todayStr = formatDate(new Date());
+  const phase = getChallengePhase(todayStr, config);
 
-  const handleNextDay = () => {
-    const cur = parseDate(currentDate);
-    cur.setDate(cur.getDate() + 1);
-    setCurrentDate(formatDate(cur));
-  };
+  const subtitle =
+    phase.phase === 'before'
+      ? `Starts ${formatPrettyDate(config.startDate, { day: 'numeric', month: 'short' })} · ${phase.daysUntilStart} day${
+          phase.daysUntilStart === 1 ? '' : 's'
+        } to go`
+      : phase.phase === 'finished'
+      ? 'Challenge complete'
+      : `Day ${phase.dayNumber} of ${config.durationDays} · ${formatPrettyDate(todayStr, { day: 'numeric', month: 'short' })}`;
 
-  const handleTodayClick = () => {
-    setCurrentDate(formatDate(new Date()));
-  };
-
-  const dayNumber = getDayNumber(currentDate, config.startDate);
-  const isChallengeDay = dayNumber >= 1 && dayNumber <= config.durationDays;
-
-  const formattedDisplayDate = new Date(currentDate + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+  const isViewingChallenger = currentUser && currentUser.id !== 'admin';
+  const showSwitcher = isAdmin && squadMembers.length > 0 && ['dashboard', 'tracker', 'calendar', 'analytics'].includes(activeTab);
 
   return (
-    <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-md border-b border-white/[0.08] safe-top px-3 py-2">
-      <div className="max-w-md mx-auto space-y-2">
-        {/* Top Line: Brand, User Info, Badges, Logout */}
-        <div className="flex items-center justify-between">
-          {/* Brand & Active Day */}
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="flex items-center space-x-2 text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-600 to-rose-700 flex items-center justify-center font-black text-white text-xs tracking-wider shadow-glow-red">
-              75H
-            </div>
-            <div>
-              <div className="flex items-center space-x-1.5">
-                <span className="font-extrabold text-sm tracking-tight text-white">75 HARD</span>
-                {isChallengeDay ? (
-                  <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                    Day {dayNumber}/{config.durationDays}
-                  </span>
-                ) : (
-                  <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                    {dayNumber < 1 ? 'Starts Nov 11' : 'Completed'}
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-400 font-medium truncate max-w-[110px] flex items-center space-x-1">
-                <span>{currentUser?.avatar}</span>
-                <span className="font-bold text-slate-200">{currentUser?.name}</span>
-              </p>
-            </div>
-          </button>
+    <header className="sticky top-0 z-40 bg-ink-950/85 backdrop-blur-xl border-b border-white/[0.05] pt-safe">
+      <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between gap-3">
+        <button onClick={() => setActiveTab('dashboard')} className="flex items-center gap-2.5 min-w-0 text-left">
+          <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center text-[13px] font-black text-white shrink-0">
+            75
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[15px] font-bold text-white leading-tight truncate">
+              {isAdmin && !isViewingChallenger ? 'Referee' : currentUser?.name}
+            </span>
+            <span className="block text-[12px] text-zinc-400 leading-tight truncate">{subtitle}</span>
+          </span>
+        </button>
 
-          {/* Badges: Admin, Deposit, Streak, Logout */}
-          <div className="flex items-center space-x-1.5">
-            {/* Admin Portal Button */}
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab('admin')}
-                className={`relative px-2 py-1 rounded-md text-[10px] font-extrabold flex items-center space-x-1 shadow-sm transition-all active:scale-95 ${activeTab === 'admin'
-                    ? 'bg-purple-600 text-white shadow-glow-purple'
-                    : 'bg-purple-950/60 text-purple-300 border border-purple-600/50'
-                  }`}
-              >
-                <ShieldAlert className="w-3 h-3 text-purple-400" />
-                <span>ADMIN</span>
-                {pendingExceptions.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute -top-0.5 -right-0.5" />
-                )}
-              </button>
-            )}
-
-            {/* Deposit Badge (Challengers Only - Admin does not have a deposit) */}
-            {!isAdmin && (
-              <div
-                onClick={() => setActiveTab('analytics')}
-                className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-bold flex items-center space-x-1 border transition-all ${
-                  (squadMembers.find(m => m.user.id === currentUser?.id)?.netDepositChange ?? 0) < 0
-                    ? 'bg-rose-950/60 text-rose-300 border-rose-700/50'
-                    : (squadMembers.find(m => m.user.id === currentUser?.id)?.netDepositChange ?? 0) > 0
-                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/50 shadow-sm'
-                    : 'bg-emerald-950/50 text-emerald-300 border-emerald-700/40'
-                }`}
-                title="Current Deposit Balance"
-              >
-                {(squadMembers.find(m => m.user.id === currentUser?.id)?.netDepositChange ?? 0) < 0 ? (
-                  <>
-                    <AlertTriangle className="w-3 h-3 text-rose-400" />
-                    <span>{config.currencySymbol}{squadMembers.find(m => m.user.id === currentUser?.id)?.currentDeposit ?? config.depositAmount}</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                    <span>{config.currencySymbol}{squadMembers.find(m => m.user.id === currentUser?.id)?.currentDeposit ?? config.depositAmount}</span>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Streak Flame */}
-            <div
-              onClick={() => setActiveTab('analytics')}
-              className="cursor-pointer flex items-center space-x-1 px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold"
-            >
-              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500 animate-flame" />
-              <span>{streakStats.currentStreak}d</span>
-            </div>
-
-            {/* Logout button */}
+        <div className="flex items-center gap-2 shrink-0">
+          {isAdmin && (
             <button
-              onClick={() => {
-                if (window.confirm('Log out of 75 HARD? Your checklist will be locked until you re-authenticate.')) {
-                  logout();
-                }
-              }}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-all border border-white/5"
-              title="Log Out"
+              onClick={() => setActiveTab('admin')}
+              aria-label="Admin panel"
+              className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition ${
+                activeTab === 'admin' ? 'bg-violet-500 text-white' : 'bg-violet-500/15 text-violet-300'
+              }`}
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <ShieldCheck className="w-[18px] h-[18px]" />
+              {pendingExceptions.length > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-ink-950 text-2xs font-bold flex items-center justify-center">
+                  {pendingExceptions.length}
+                </span>
+              )}
             </button>
-          </div>
+          )}
+          {(!isAdmin || isViewingChallenger) && (
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className="h-9 px-3 rounded-xl bg-amber-500/10 text-amber-300 flex items-center gap-1.5 text-sm font-bold tabular"
+              aria-label="Current streak"
+            >
+              <Flame className="w-4 h-4 text-amber-400 fill-amber-400" />
+              {streakStats.currentStreak}
+            </button>
+          )}
         </div>
+      </div>
 
-        {/* SQUAD MEMBER QUICK SWITCHER (IF ADMIN PREVIEWING CHECKLIST) */}
-        {isAdmin && squadMembers.length > 0 && activeTab === 'tracker' && (
-          <div className="bg-black/40 rounded-xl p-1 border border-white/[0.06] flex items-center justify-between gap-1">
-            {squadMembers.map(member => {
-              const isSelected = member.user.id === currentUser?.id;
+      {showSwitcher && (
+        <div className="max-w-md mx-auto px-4 pb-2.5">
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+            {squadMembers.map(m => {
+              const selected = m.user.id === currentUser?.id;
               return (
                 <button
-                  key={member.user.id}
-                  onClick={() => setCurrentUserId(member.user.id)}
-                  className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between min-w-0 ${isSelected
-                      ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-sm ring-1 ring-white/20'
-                      : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.08]'
-                    }`}
+                  key={m.user.id}
+                  onClick={() => setCurrentUserId(m.user.id)}
+                  className={`h-8 pl-2 pr-2.5 rounded-full flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap transition ${
+                    selected ? 'bg-white text-ink-950' : 'bg-white/[0.06] text-zinc-300'
+                  }`}
                 >
-                  <div className="flex items-center space-x-1.5 truncate">
-                    <span className="text-sm shrink-0">{member.user.avatar}</span>
-                    <span className="truncate text-[11px] font-bold">{member.user.name}</span>
-                  </div>
-                  <span
-                    className={`text-[9px] px-1 py-0.2 rounded font-black ml-1 shrink-0 ${member.todayAllCompleted
-                        ? 'bg-emerald-500 text-black font-extrabold'
-                        : isSelected
-                          ? 'bg-white/20 text-white'
-                          : 'bg-black/40 text-slate-500'
-                      }`}
-                  >
-                    {member.todayAllCompleted ? '✓' : `${member.todayCompletedCount}/11`}
+                  <span>{m.user.avatar}</span>
+                  {m.user.name}
+                  <span className={`text-2xs font-bold tabular ${selected ? 'text-zinc-500' : m.todayAllCompleted ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                    {m.todayCompletedCount}/{m.todayTotalCount}
                   </span>
                 </button>
               );
             })}
           </div>
-        )}
-
-        {/* Date Navigator Bar ONLY on Checklist / Tracker screen */}
-        {activeTab === 'tracker' && (
-          <div className="pt-1 flex items-center justify-between">
-            <button
-              onClick={handlePrevDay}
-              className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
-              title="Previous Day"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={handleTodayClick}
-                className={`text-xs font-semibold px-2 py-0.5 rounded transition-all flex items-center space-x-1.5 ${isToday
-                    ? 'bg-rose-600 text-white shadow-sm'
-                    : adminOverrideMode || isAdmin
-                      ? 'bg-purple-950/60 text-purple-300 border border-purple-500/50'
-                      : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
-                  }`}
-              >
-                <Calendar className="w-3 h-3" />
-                <span>{formattedDisplayDate}</span>
-                {isToday ? (
-                  <span className="text-[10px] bg-white/20 px-1 rounded font-bold">TODAY</span>
-                ) : adminOverrideMode || isAdmin ? (
-                  <span className="text-[10px] bg-purple-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
-                    <Unlock className="w-2.5 h-2.5 text-purple-300" />
-                    <span>OVERRIDE EDITABLE</span>
-                  </span>
-                ) : (
-                  <span className="text-[10px] bg-amber-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
-                    <Lock className="w-2.5 h-2.5" />
-                    <span>LOCKED</span>
-                  </span>
-                )}
-              </button>
-            </div>
-
-            <button
-              onClick={handleNextDay}
-              className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
-              title="Next Day"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </header>
   );
 };

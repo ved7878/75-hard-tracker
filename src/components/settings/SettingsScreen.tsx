@@ -2,213 +2,247 @@ import React, { useState } from 'react';
 import {
   Bell,
   Volume2,
-  VolumeX,
   LogOut,
-  ShieldAlert,
+  ShieldCheck,
   Smartphone,
-  ExternalLink,
-  ChevronRight,
-  UserCheck,
-  Flame,
-  CheckCircle,
   KeyRound,
-  Lock,
+  PlaneTakeoff,
+  BellRing,
+  CalendarRange,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
-import { sendLocalNotification, requestNotificationPermission } from '../../services/notifications';
+import {
+  sendLocalNotification,
+  requestNotificationPermission,
+  getReminderPrefs,
+  saveReminderPrefs,
+  notificationPermission,
+} from '../../services/notifications';
 import { sound } from '../../services/audio';
 import { supabaseService } from '../../services/supabaseService';
+import { formatPrettyDate, formatTime12 } from '../../services/rulesEngine';
+import { Card, ListGroup, ListRow, SectionHeader, Sheet, Switch, ScreenTitle, Notice } from '../ui';
 
-export const SettingsScreen: React.FC = () => {
-  const { config, updateConfig, currentUser, isAdmin, logout } = useChallenge();
+interface SettingsScreenProps {
+  onNavigateTab: (tab: string) => void;
+}
+
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab }) => {
+  const { config, currentUser, isAdmin, logout, pendingExceptions, squadMembers } = useChallenge();
   const [soundEnabled, setSoundEnabled] = useState(sound.getSoundEnabled());
+  const [reminder, setReminder] = useState(() => getReminderPrefs({ enabled: config.reminderEnabled, time: config.reminderTime }));
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const handleTestNotification = async () => {
+  const isRefereeSelf = isAdmin && currentUser?.id === 'admin';
+  const me = squadMembers.find(m => m.user.id === currentUser?.id);
+
+  const updateReminder = async (next: typeof reminder) => {
+    if (next.enabled && !reminder.enabled) {
+      const granted = await requestNotificationPermission();
+      if (!granted) {
+        alert('Notifications are blocked. Allow them in your browser settings to get the reminder.');
+        return;
+      }
+    }
+    setReminder(next);
+    saveReminderPrefs(next);
+  };
+
+  const testNotification = async () => {
     const granted = await requestNotificationPermission();
     if (granted) {
-      sendLocalNotification('75 HARD – 9:00 PM Accountability Check', {
-        body: 'Discipline check! Log your workouts, reading, diet, and progress photo before midnight.',
-      });
-      alert('Notification sent! Check your notification panel.');
+      sendLocalNotification('75 HARD reminder', { body: 'This is how your daily reminder will look.' });
     } else {
-      alert('Notifications are blocked or not allowed in your browser settings.');
+      alert('Notifications are blocked or not supported in this browser.');
     }
   };
 
-  const toggleSound = () => {
-    const next = !soundEnabled;
-    setSoundEnabled(next);
-    sound.setSoundEnabled(next);
-    if (next) sound.playTaskCheck();
+  const savePassword = async () => {
+    if (!currentUser) return;
+    if (pw.trim().length < 4) return setPwMsg({ ok: false, text: 'Use at least 4 characters.' });
+    if (pw !== pw2) return setPwMsg({ ok: false, text: "Passwords don't match." });
+    const res = await supabaseService.updateUser(currentUser.id, { password: pw.trim() });
+    setPwMsg({ ok: res.success, text: res.success ? 'Password updated.' : res.message || 'Could not update password.' });
+    if (res.success) {
+      setTimeout(() => {
+        setPwOpen(false);
+        setPw('');
+        setPw2('');
+        setPwMsg(null);
+      }, 900);
+    }
   };
 
   return (
-    <div className="space-y-4 pb-8 text-xs">
-      {/* Page Title */}
-      <div>
-        <h2 className="text-base font-extrabold text-white">Challenger Preferences</h2>
-        <p className="text-slate-400">
-          Personal notifications, audio feedback, and profile settings.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <ScreenTitle title="More" />
 
-      {/* Profile Overview Card */}
-      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <span className="text-3xl">{currentUser?.avatar}</span>
-          <div>
-            <h3 className="text-sm font-black text-white">{currentUser?.name}</h3>
-            <p className="text-[11px] text-slate-400 font-mono">
-              Username: <strong className="text-slate-300">@{currentUser?.username || 'user'}</strong>
+      {/* Profile */}
+      <Card className="flex items-center gap-4">
+        <span className="w-14 h-14 rounded-2xl bg-white/[0.05] flex items-center justify-center text-3xl shrink-0">
+          {isRefereeSelf ? '⚖️' : currentUser?.avatar}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-lg font-bold text-white truncate">{isRefereeSelf ? 'Referee' : currentUser?.name}</p>
+          <p className="text-[13px] text-zinc-500 truncate">@{currentUser?.username || currentUser?.id}</p>
+          {!isRefereeSelf && (
+            <p className="text-[13px] text-emerald-400 mt-0.5 tabular">
+              {config.currencySymbol}
+              {(me?.currentDeposit ?? currentUser?.depositAmount ?? config.depositAmount).toLocaleString('en-IN')} deposit
             </p>
-            {isAdmin ? (
-              <span className="text-[10px] text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 inline-block mt-1">
-                Challenge Referee • Zero Deposit
-              </span>
-            ) : (
-              <span className="text-[10px] text-emerald-400 font-bold">
-                {config.currencySymbol}{currentUser?.depositAmount !== undefined ? currentUser.depositAmount : config.depositAmount} Deposit Pledge
-              </span>
-            )}
-          </div>
+          )}
         </div>
+      </Card>
 
-        <button
-          onClick={logout}
-          className="px-3 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 font-bold border border-rose-600/30 flex items-center space-x-1.5 transition-all active:scale-95"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Log Out</span>
-        </button>
-      </div>
-
-      {/* Account Security Card */}
-      {currentUser && (
-        <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-3">
-          <div className="flex items-center space-x-2">
-            <KeyRound className="w-4 h-4 text-amber-400" />
-            <h3 className="font-bold text-white text-xs uppercase tracking-wider">Account Security</h3>
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-white/[0.06]">
-            <div>
-              <span className="text-slate-300 font-bold block">Password Protection</span>
-              <span className="text-slate-500 text-[10px]">Update your account login password</span>
-            </div>
-            <button
-              onClick={async () => {
-                const newPass = prompt(`Enter new password for ${currentUser.name}:`);
-                if (newPass && newPass.trim().length >= 4) {
-                  await supabaseService.updateUser(currentUser.id, { password: newPass.trim() });
-                  alert('Password updated successfully!');
-                } else if (newPass !== null) {
-                  alert('Password must be at least 4 characters long.');
-                }
-              }}
-              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all active:scale-95"
-            >
-              Change Password
-            </button>
-          </div>
-        </div>
+      {isAdmin && !isRefereeSelf && (
+        <Notice tone="violet" icon={ShieldCheck} title={`Previewing ${currentUser?.name}`}>
+          You're signed in as referee. Switch people from the bar at the top of Today.
+        </Notice>
       )}
 
-      {/* ADMIN PANEL SHORTCUT (IF ADMIN) */}
-      {isAdmin && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 to-indigo-950/50 border border-purple-500/40 space-y-2 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <ShieldAlert className="w-5 h-5 text-purple-400" />
-              <h3 className="font-extrabold text-white text-sm">System & Task Modification Engine</h3>
-            </div>
-            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-black">
-              ADMIN ONLY
-            </span>
-          </div>
-          <p className="text-[11px] text-purple-200/80 leading-relaxed">
-            All challenge rules, habit targets (wake-up time, reading pages, steps target, gym substitutes, dates, deposit amount), user additions, and exception approvals are managed exclusively in the Admin Panel.
-          </p>
-        </div>
-      )}
-
-      {/* NOTIFICATION PREFERENCES */}
-      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-              <Bell className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">Daily 9:00 PM Reminder</h3>
-              <p className="text-[11px] text-slate-400">Notification alert to seal tasks before midnight</p>
-            </div>
-          </div>
-
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={config.reminderEnabled}
-              onChange={e => updateConfig({ reminderEnabled: e.target.checked })}
-              className="sr-only peer"
+      <section>
+        <SectionHeader title="Challenge" />
+        <ListGroup>
+          {!isRefereeSelf && (
+            <ListRow
+              icon={PlaneTakeoff}
+              iconTone="amber"
+              title="Travel & sick days"
+              subtitle="Adjust rules or request an exemption"
+              onClick={() => onNavigateTab('travel')}
+              chevron
             />
-            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-          </label>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/[0.06]">
-          <div>
-            <label className="text-slate-400 font-semibold block mb-1">Reminder Time:</label>
-            <input
-              type="time"
-              value={config.reminderTime}
-              onChange={e => updateConfig({ reminderTime: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white font-mono"
+          )}
+          {isAdmin && (
+            <ListRow
+              icon={ShieldCheck}
+              iconTone="violet"
+              title="Admin panel"
+              subtitle="Requests, squad, rules, dates"
+              onClick={() => onNavigateTab('admin')}
+              right={
+                pendingExceptions.length > 0 ? (
+                  <span className="chip bg-amber-400 text-ink-950">{pendingExceptions.length}</span>
+                ) : undefined
+              }
+              chevron
             />
-          </div>
+          )}
+          <ListRow
+            icon={CalendarRange}
+            title="Challenge dates"
+            subtitle={`${formatPrettyDate(config.startDate, { day: 'numeric', month: 'short' })} – ${formatPrettyDate(config.endDate, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })} · ${config.durationDays} days`}
+          />
+        </ListGroup>
+      </section>
 
-          <div className="flex items-end">
-            <button
-              onClick={handleTestNotification}
-              className="w-full p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all active:scale-95"
-            >
-              Test Notification
-            </button>
-          </div>
-        </div>
-      </div>
+      <section>
+        <SectionHeader title="Notifications & sound" />
+        <ListGroup>
+          <ListRow
+            icon={Bell}
+            iconTone="rose"
+            title="Daily reminder"
+            subtitle={
+              reminder.enabled && notificationPermission() !== 'granted'
+                ? 'Blocked – allow notifications in your browser'
+                : reminder.enabled
+                ? `Every day at ${formatTime12(reminder.time)}`
+                : 'Off'
+            }
+            right={<Switch checked={reminder.enabled} onChange={v => updateReminder({ ...reminder, enabled: v })} label="Daily reminder" />}
+          />
+          {reminder.enabled && (
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-[15px] text-zinc-300 pl-12">Time</span>
+              <input
+                type="time"
+                value={reminder.time}
+                onChange={e => updateReminder({ ...reminder, time: e.target.value })}
+                className="input w-36 text-center"
+              />
+            </div>
+          )}
+          <ListRow icon={BellRing} title="Send test notification" onClick={testNotification} chevron />
+          <ListRow
+            icon={Volume2}
+            iconTone="emerald"
+            title="Sounds"
+            subtitle="Tick and day-complete sounds"
+            right={
+              <Switch
+                checked={soundEnabled}
+                tone="emerald"
+                label="Sounds"
+                onChange={v => {
+                  setSoundEnabled(v);
+                  sound.setSoundEnabled(v);
+                  if (v) sound.playTaskCheck();
+                }}
+              />
+            }
+          />
+        </ListGroup>
+        <p className="text-[12px] text-zinc-500 mt-2 px-1">These settings only apply to this device.</p>
+      </section>
 
-      {/* AUDIO HAPTICS FEEDBACK */}
-      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-2.5">
-          <div className={`p-2 rounded-xl ${soundEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}>
-            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Tactile Athletic Audio</h3>
-            <p className="text-[11px] text-slate-400">Click sounds and completion chimes</p>
-          </div>
-        </div>
+      <section>
+        <SectionHeader title="Account" />
+        <ListGroup>
+          {!isRefereeSelf && <ListRow icon={KeyRound} title="Change password" onClick={() => setPwOpen(true)} chevron />}
+          <ListRow
+            icon={LogOut}
+            iconTone="rose"
+            title="Log out"
+            danger
+            onClick={() => {
+              if (window.confirm('Log out of 75 HARD?')) logout();
+            }}
+          />
+        </ListGroup>
+      </section>
 
-        <button
-          onClick={toggleSound}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-            soundEnabled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-white/5 text-slate-400'
-          }`}
-        >
-          {soundEnabled ? 'Enabled' : 'Muted'}
-        </button>
-      </div>
-
-      {/* PWA INSTALLATION GUIDE */}
-      <div className="rounded-2xl glass-card border border-white/[0.08] p-4 space-y-2">
-        <div className="flex items-center space-x-2">
-          <Smartphone className="w-4 h-4 text-rose-500" />
-          <h3 className="font-bold text-white text-xs uppercase tracking-wider">Install App on Phone (PWA)</h3>
-        </div>
-        <p className="text-[11px] text-slate-400 leading-relaxed">
-          Open this website in Safari (iOS) or Chrome (Android) and tap <strong>"Add to Home Screen"</strong> for a native, standalone full-screen experience with instant offline logging.
+      <Card className="flex gap-3">
+        <Smartphone className="w-5 h-5 text-zinc-500 shrink-0 mt-0.5" />
+        <p className="text-[13px] text-zinc-400 leading-relaxed">
+          <span className="text-zinc-200 font-semibold">Install on your phone:</span> open this site in Safari or Chrome and choose{' '}
+          <span className="text-zinc-200">Add to Home Screen</span>.
         </p>
-      </div>
+      </Card>
+
+      <Sheet
+        open={pwOpen}
+        onClose={() => setPwOpen(false)}
+        title="Change password"
+        footer={
+          <button className="btn-primary w-full" onClick={savePassword}>
+            Save password
+          </button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="field-label" htmlFor="new-pw">
+              New password
+            </label>
+            <input id="new-pw" className="input" type="password" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="confirm-pw">
+              Confirm password
+            </label>
+            <input id="confirm-pw" className="input" type="password" autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} />
+          </div>
+          {pwMsg && <p className={`text-sm ${pwMsg.ok ? 'text-emerald-400' : 'text-rose-400'}`}>{pwMsg.text}</p>}
+        </div>
+      </Sheet>
     </div>
   );
 };

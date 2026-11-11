@@ -37,6 +37,7 @@ export interface ChallengeConfig {
   currencySymbol: string; // '₹'
   wakeUpTarget: string; // '06:00'
   wakeUpTravelTarget: string; // '08:00'
+  wakeUpGraceMinutes: number; // check-in buffer after the target (e.g. 10 -> 6:10 AM)
   travelThresholdHours: number; // 4
   readingMinPages: number; // 5
   readingMaxPages: number; // 10
@@ -46,6 +47,8 @@ export interface ChallengeConfig {
   travelSubstituteSteps: number; // 15000
   travelSubstituteRunKm: number; // 5.0
   familyTargetMinutes: number; // 10
+  calorieTarget: number; // daily kcal goal (tracking only, not required to pass the day)
+  proteinTargetG: number; // daily protein goal in grams
   reminderTime: string; // '21:00'
   reminderEnabled: boolean;
   strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
@@ -114,6 +117,8 @@ export interface TaskState {
     completed: boolean;
     cleanDietChecked: boolean; // no added sugar, low oil, no junk
     notes?: string;
+    calories?: number; // kcal eaten today
+    proteinGrams?: number; // grams of protein today
   };
   progressPhoto: {
     completed: boolean;

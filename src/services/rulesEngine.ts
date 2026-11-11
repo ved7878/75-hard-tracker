@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   currencySymbol: '₹',
   wakeUpTarget: '06:00',
   wakeUpTravelTarget: '08:00',
+  wakeUpGraceMinutes: 10,
   travelThresholdHours: 4,
   readingMinPages: 5,
   readingMaxPages: 10,
@@ -27,6 +28,8 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   travelSubstituteSteps: 15000,
   travelSubstituteRunKm: 5.0,
   familyTargetMinutes: 10,
+  calorieTarget: 2200,
+  proteinTargetG: 120,
   reminderTime: '21:00',
   reminderEnabled: true,
   strictResetOnMiss: true,
@@ -69,6 +72,80 @@ export function getDaysDiff(fromStr: string, toStr: string): number {
  */
 export function getDayNumber(dateStr: string, startDateStr: string = DEFAULT_CONFIG.startDate): number {
   return getDaysDiff(startDateStr, dateStr) + 1;
+}
+
+/**
+ * Add N calendar days to a YYYY-MM-DD string
+ */
+export function addDays(dateStr: string, days: number): string {
+  const d = parseDate(dateStr);
+  d.setDate(d.getDate() + days);
+  return formatDate(d);
+}
+
+/**
+ * The end date is always derived from start date + duration, so it can never drift
+ * out of sync when the admin changes the start date.
+ */
+export function getEndDate(startDate: string, durationDays: number): string {
+  return addDays(startDate, Math.max(1, durationDays) - 1);
+}
+
+/**
+ * Normalise a config loaded from storage / cloud: guarantees a valid start date and
+ * recomputes the end date from start + duration.
+ */
+export function normalizeConfig(config: Partial<ChallengeConfig>): ChallengeConfig {
+  const merged: ChallengeConfig = { ...DEFAULT_CONFIG, ...config };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(merged.startDate || '')) {
+    merged.startDate = DEFAULT_CONFIG.startDate;
+  }
+  merged.durationDays = Number(merged.durationDays) > 0 ? Number(merged.durationDays) : DEFAULT_CONFIG.durationDays;
+  merged.endDate = getEndDate(merged.startDate, merged.durationDays);
+  return merged;
+}
+
+/**
+ * Human readable date, e.g. "Thu, 12 Nov"
+ */
+export function formatPrettyDate(
+  dateStr: string,
+  opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }
+): string {
+  return parseDate(dateStr).toLocaleDateString('en-IN', opts);
+}
+
+/**
+ * "06:00" -> "6:00 AM"
+ */
+export function formatTime12(time: string): string {
+  if (!time || !/^\d{1,2}:\d{2}/.test(time)) return time || '';
+  const [hStr, m] = time.split(':');
+  const h = Number(hStr);
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m.slice(0, 2)} ${suffix}`;
+}
+
+export interface ChallengePhase {
+  phase: 'before' | 'active' | 'finished';
+  dayNumber: number; // can be <= 0 before start
+  daysUntilStart: number; // 0 when started
+  daysLeft: number; // remaining days incl. the given day, 0 when finished
+}
+
+/**
+ * Where a given date sits relative to the challenge window.
+ */
+export function getChallengePhase(dateStr: string, config: ChallengeConfig): ChallengePhase {
+  const dayNumber = getDayNumber(dateStr, config.startDate);
+  if (dayNumber < 1) {
+    return { phase: 'before', dayNumber, daysUntilStart: 1 - dayNumber, daysLeft: config.durationDays };
+  }
+  if (dayNumber > config.durationDays) {
+    return { phase: 'finished', dayNumber, daysUntilStart: 0, daysLeft: 0 };
+  }
+  return { phase: 'active', dayNumber, daysUntilStart: 0, daysLeft: config.durationDays - dayNumber + 1 };
 }
 
 /**
@@ -131,6 +208,8 @@ export function createDefaultTasks(config: ChallengeConfig = DEFAULT_CONFIG): Ta
       completed: false,
       cleanDietChecked: false,
       notes: '',
+      calories: 0,
+      proteinGrams: 0,
     },
     progressPhoto: {
       completed: false,
@@ -219,6 +298,36 @@ export function getEffectiveWakeUpTarget(travelHours: number, isTravelling: bool
   return config.wakeUpTarget; // '06:00'
 }
 
+/** "06:00" + 10 -> "06:10" (clamped to the same day) */
+export function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = Math.min(23 * 60 + 59, Math.max(0, h * 60 + m + (Number(minutes) || 0)));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** Current local time as "HH:MM" */
+export function currentTimeHHMM(now: Date = new Date()): string {
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Last moment a wake-up check-in still counts: target + grace buffer
+ * (6:00 + 10 min -> 6:10, or 8:10 on long travel days).
+ */
+export function getWakeUpDeadline(log: DailyLog, config: ChallengeConfig): string {
+  const target = getEffectiveWakeUpTarget(log.travel.hours, log.travel.isTravelling, config);
+  return addMinutesToTime(target, config.wakeUpGraceMinutes ?? 10);
+}
+
+/**
+ * Challengers can only check in on the day itself, before the deadline.
+ * After that the wake-up habit is locked for the day (only the admin can change it).
+ */
+export function isWakeUpCheckInOpen(log: DailyLog, config: ChallengeConfig, now: Date = new Date()): boolean {
+  if (log.date !== formatDate(now)) return false;
+  return currentTimeHHMM(now) <= getWakeUpDeadline(log, config);
+}
+
 /**
  * Evaluates whether Gym is satisfied:
  * - If normal: workout completed = true.
@@ -244,7 +353,7 @@ export function evaluateGymCompletion(
     return {
       satisfied: false,
       isSubstituted: true,
-      reason: `Travel substitute required: 15,000 steps OR 5 KM run (Gym unavailable due to travel)`,
+      reason: `Travel substitute: ${config.travelSubstituteSteps.toLocaleString()} steps OR ${config.travelSubstituteRunKm} km run`,
     };
   }
 
@@ -298,12 +407,13 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
 } {
   const { tasks, travel } = log;
   const effectiveWakeTarget = getEffectiveWakeUpTarget(travel.hours, travel.isTravelling, config);
+  const wakeDeadline = getWakeUpDeadline(log, config);
   const gymEval = evaluateGymCompletion(tasks.gym, travel, config);
   const paEval = evaluatePhysicalActivity(tasks.physicalActivity, config);
 
   // 1. Wake Up
   const wakeUpValid = tasks.wakeUp.completed && (
-    !tasks.wakeUp.actualTime || tasks.wakeUp.actualTime <= effectiveWakeTarget
+    !tasks.wakeUp.actualTime || tasks.wakeUp.actualTime <= wakeDeadline
   );
 
   // 2. No Masturbation
@@ -341,7 +451,7 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
       id: 'wakeUp',
       title: 'Wake Up',
       isCompleted: wakeUpValid,
-      requirementDesc: `By ${effectiveWakeTarget} AM${travel.isTravelling && travel.hours > 4 ? ' (Travel >4h exemption)' : ''}`,
+      requirementDesc: `Check in by ${formatTime12(wakeDeadline)}${travel.isTravelling && travel.hours > config.travelThresholdHours ? ' (travel)' : ''}`,
     },
     {
       id: 'noMasturbation',
@@ -359,51 +469,51 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
       id: 'reading',
       title: 'Reading',
       isCompleted: readingValid,
-      requirementDesc: `${config.readingMinPages}–${config.readingMaxPages} pages non-fiction/growth`,
+      requirementDesc: `${config.readingMinPages}–${config.readingMaxPages} pages, non-fiction`,
     },
     {
       id: 'gym',
       title: 'Gym Workout',
       isCompleted: gymValid,
       requirementDesc: gymEval.isSubstituted
-        ? 'Travel Sub: 15K steps OR 5 KM run'
+        ? `${(config.travelSubstituteSteps / 1000).toFixed(0)}K steps or ${config.travelSubstituteRunKm} km run`
         : 'Daily dedicated workout',
     },
     {
       id: 'physicalActivity',
       title: 'Physical Activity',
       isCompleted: paValid,
-      requirementDesc: `${(config.stepsTarget / 1000).toFixed(0)}K steps / ${config.runTargetKm}K run / ${config.floorsTarget} floors`,
+      requirementDesc: `${(config.stepsTarget / 1000).toFixed(0)}K steps · ${config.runTargetKm} km · ${config.floorsTarget} floors`,
     },
     {
       id: 'diet',
       title: 'Clean Diet',
       isCompleted: dietValid,
-      requirementDesc: 'No added sugar, low oil, no junk',
+      requirementDesc: 'No sugar, junk or excess oil',
     },
     {
       id: 'progressPhoto',
       title: 'Daily Progress Photo',
       isCompleted: photoValid,
-      requirementDesc: '1 full body progress picture',
+      requirementDesc: 'One full-body picture',
     },
     {
       id: 'learning',
-      title: 'Learn Something New',
+      title: 'Learn Something',
       isCompleted: learningValid,
-      requirementDesc: 'Daily knowledge / skill acquisition',
+      requirementDesc: 'One new skill or idea',
     },
     {
       id: 'health',
-      title: 'Physical & Mental Health',
+      title: 'Health & Mind',
       isCompleted: healthValid,
-      requirementDesc: 'Maintain mental clarity & physical care',
+      requirementDesc: 'Water, rest, calm mind',
     },
     {
       id: 'family',
       title: 'Family Time',
       isCompleted: familyValid,
-      requirementDesc: `${config.familyTargetMinutes} minutes quality connection`,
+      requirementDesc: `${config.familyTargetMinutes} min quality time`,
     },
   ];
 

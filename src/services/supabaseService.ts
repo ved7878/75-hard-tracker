@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserProfile, ChallengeConfig, DailyLog } from '../types';
-import { DEFAULT_CONFIG } from './rulesEngine';
+import { normalizeConfig } from './rulesEngine';
 import { storage, DEFAULT_USERS } from './storage';
 
 // Local storage keys for hybrid offline/online fallback
@@ -275,6 +275,14 @@ class SupabaseService {
     const cleanUsername = newUser.username.trim().toLowerCase();
     const id = `user_${Date.now()}`;
 
+    // Usernames must be unique, otherwise login can't tell people apart
+    const taken = [...storage.getAuthUsers(), ...storage.getUsers()].some(
+      u => u.username?.toLowerCase() === cleanUsername || u.id.toLowerCase() === cleanUsername
+    );
+    if (taken || cleanUsername === 'admin' || cleanUsername === 'referee') {
+      return { success: false, message: `The username "${cleanUsername}" is already taken.` };
+    }
+
     const profile: UserProfile = {
       id,
       username: cleanUsername,
@@ -387,6 +395,11 @@ class SupabaseService {
 
     const localUsers = storage.getUsers().filter(u => u.id !== userId);
     storage.saveUsers(localUsers);
+    // Also remove their login and logs, so a removed person can't sign in any more
+    storage.saveAuthUsers(storage.getAuthUsers().filter(u => u.id !== userId));
+    try {
+      localStorage.removeItem(`75hard_logs_${userId}`);
+    } catch (e) {}
     return { success: true, message: 'User removed from squad.' };
   }
 
@@ -431,6 +444,34 @@ class SupabaseService {
       }
     }
     return storage.getAllUsersLogs();
+  }
+
+  private pendingCloudSaves = new Map<string, { timer: ReturnType<typeof setTimeout>; userId: string; log: DailyLog }>();
+
+  /**
+   * Saves locally right away and batches the cloud write, so typing in a text field
+   * doesn't fire one network request per keystroke.
+   */
+  public saveLogDebounced(userId: string, log: DailyLog, delayMs = 700): void {
+    storage.saveUserLog(userId, log);
+    if (!this.client) return;
+    const key = `${userId}_${log.date}`;
+    const existing = this.pendingCloudSaves.get(key);
+    if (existing) clearTimeout(existing.timer);
+    const timer = setTimeout(() => {
+      this.pendingCloudSaves.delete(key);
+      this.saveLog(userId, log);
+    }, delayMs);
+    this.pendingCloudSaves.set(key, { timer, userId, log });
+  }
+
+  /** Immediately push any queued cloud writes (e.g. when the app is backgrounded). */
+  public flushPendingSaves(): void {
+    this.pendingCloudSaves.forEach(({ timer, userId, log }, key) => {
+      clearTimeout(timer);
+      this.pendingCloudSaves.delete(key);
+      this.saveLog(userId, log);
+    });
   }
 
   public async saveLog(userId: string, log: DailyLog): Promise<boolean> {
@@ -532,7 +573,7 @@ class SupabaseService {
           .single();
 
         if (!error && data && data.config) {
-          const merged = { ...DEFAULT_CONFIG, ...data.config };
+          const merged = normalizeConfig(data.config);
           storage.saveConfig(merged);
           return merged;
         }
@@ -540,26 +581,35 @@ class SupabaseService {
         console.warn('Failed to load cloud config:', err);
       }
     }
-    return storage.getConfig();
+    return normalizeConfig(storage.getConfig());
   }
 
-  public async saveConfig(config: ChallengeConfig): Promise<boolean> {
-    storage.saveConfig(config);
+  /**
+   * Saves config locally and to the cloud. Returns false (with message) if the cloud write
+   * failed, so the UI can tell the admin instead of silently reverting on next reload.
+   */
+  public async saveConfig(config: ChallengeConfig): Promise<{ success: boolean; message?: string }> {
+    const normalized = normalizeConfig(config);
+    storage.saveConfig(normalized);
 
     if (this.client) {
       try {
-        await this.client.from('challenge_config').upsert({
+        const { error } = await this.client.from('challenge_config').upsert({
           id: 'current_config',
-          config,
+          config: normalized,
           updated_at: new Date().toISOString(),
         });
-        return true;
-      } catch (err) {
+        if (error) {
+          console.warn('Failed to save config to cloud:', error);
+          return { success: false, message: `Cloud save failed: ${error.message}` };
+        }
+        return { success: true };
+      } catch (err: any) {
         console.warn('Failed to save config to cloud:', err);
-        return false;
+        return { success: false, message: err?.message || 'Cloud save failed' };
       }
     }
-    return true;
+    return { success: true };
   }
 }
 

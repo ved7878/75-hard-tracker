@@ -19,6 +19,10 @@ import {
   computeDayStatus,
   calculateStreakStats,
   calculateSquadDepositLedger,
+  getWakeUpDeadline,
+  isWakeUpCheckInOpen,
+  normalizeConfig,
+  getChallengePhase,
 } from '../src/services/rulesEngine.ts';
 
 // Helper: produce a fully completed day's tasks
@@ -457,5 +461,51 @@ describe('8. User Authentication, Security & Password Recovery', () => {
     // Verify new password immediately works
     const loginRes = authenticate('vedant', 'newVedantPass999');
     assert.strictEqual(loginRes.success, true);
+  });
+});
+
+describe('Wake-up check-in window (target + 10 min buffer)', () => {
+  const config = normalizeConfig({ ...DEFAULT_CONFIG, wakeUpTarget: '06:00', wakeUpGraceMinutes: 10 });
+  const date = '2026-11-12';
+  const at = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return new Date(2026, 10, 12, h, m, 0);
+  };
+
+  it('deadline is 6:10 normally and 8:10 on a long travel day', () => {
+    const log = createDefaultLog(date, config, 'user_1');
+    assert.strictEqual(getWakeUpDeadline(log, config), '06:10');
+    const travel = { ...log, travel: { ...log.travel, isTravelling: true, hours: 6 } };
+    assert.strictEqual(getWakeUpDeadline(travel, config), '08:10');
+  });
+
+  it('check-in is open at 6:05 and 6:10, closed from 6:11', () => {
+    const log = createDefaultLog(date, config, 'user_1');
+    assert.strictEqual(isWakeUpCheckInOpen(log, config, at('06:05')), true);
+    assert.strictEqual(isWakeUpCheckInOpen(log, config, at('06:10')), true);
+    assert.strictEqual(isWakeUpCheckInOpen(log, config, at('06:11')), false);
+  });
+
+  it('check-in is never open for another day', () => {
+    const log = createDefaultLog('2026-11-11', config, 'user_1');
+    assert.strictEqual(isWakeUpCheckInOpen(log, config, at('05:00')), false);
+  });
+
+  it('a 6:08 check-in counts, a 6:11 one does not', () => {
+    const log = createDefaultLog(date, config, 'user_1');
+    const withTime = (t: string) => ({ ...log, tasks: { ...log.tasks, wakeUp: { ...log.tasks.wakeUp, completed: true, actualTime: t } } });
+    const ok = validateDayTasks(withTime('06:08'), config).items.find(i => i.id === 'wakeUp')!;
+    const late = validateDayTasks(withTime('06:11'), config).items.find(i => i.id === 'wakeUp')!;
+    assert.strictEqual(ok.isCompleted, true);
+    assert.strictEqual(late.isCompleted, false);
+  });
+});
+
+describe('Changing the start date', () => {
+  it('recomputes the end date and the day number', () => {
+    const cfg = normalizeConfig({ ...DEFAULT_CONFIG, startDate: '2026-11-12', endDate: '2027-01-24' });
+    assert.strictEqual(cfg.endDate, '2027-01-25');
+    assert.strictEqual(getDayNumber('2026-11-12', cfg.startDate), 1);
+    assert.strictEqual(getChallengePhase('2026-11-11', cfg).phase, 'before');
   });
 });
