@@ -95,9 +95,10 @@ class SupabaseService {
   public async getUsers(): Promise<UserProfile[]> {
     if (this.client) {
       try {
+        // Strictly select public, non-sensitive columns only. Passwords and PINs are NEVER requested!
         const { data, error } = await this.client
           .from('profiles')
-          .select('*')
+          .select('id, username, name, email, avatar, color, role, deposit_amount, created_at')
           .order('created_at', { ascending: true });
 
         if (!error && data && data.length > 0) {
@@ -106,16 +107,13 @@ class SupabaseService {
             username: row.username,
             name: row.name,
             email: row.email,
-            password: row.password,
-            pin: row.pin,
             avatar: row.avatar,
             color: row.color,
             role: row.role,
             depositAmount: row.role === 'admin' ? 0 : (Number(row.deposit_amount) || 2000),
-            recoveryAnswer: row.recovery_answer,
             createdAt: row.created_at,
           }));
-          // Sync to local cache
+          // Sync sanitized public profiles to local cache
           storage.saveUsers(profiles);
           return profiles;
         }
@@ -148,13 +146,12 @@ class SupabaseService {
           const pinMatch = u.pin === cleanSecret;
 
           if (passwordMatch || pinMatch) {
+            // Strictly sanitize user before returning - NEVER expose password or PIN to state or components!
             const user: UserProfile = {
               id: u.id,
               username: u.username,
               name: u.name,
               email: u.email,
-              password: u.password,
-              pin: u.pin,
               avatar: u.avatar,
               color: u.color,
               role: u.role,
@@ -171,9 +168,9 @@ class SupabaseService {
       }
     }
 
-    // 2. Local fallback
-    const localUsers = storage.getUsers();
-    const found = localUsers.find(
+    // 2. Local offline fallback using isolated auth store
+    const authUsers = storage.getAuthUsers();
+    const found = authUsers.find(
       u =>
         u.username?.toLowerCase() === cleanId ||
         u.id.toLowerCase() === cleanId ||
@@ -186,7 +183,9 @@ class SupabaseService {
     }
 
     if (found.password === cleanSecret || found.pin === cleanSecret) {
-      return { success: true, user: found };
+      // Strip credentials before returning to client session
+      const { password: _p, pin: _pin, recoveryAnswer: _ra, ...safeUser } = found;
+      return { success: true, user: safeUser };
     }
 
     return { success: false, message: 'Incorrect password or PIN.' };
@@ -237,9 +236,9 @@ class SupabaseService {
       }
     }
 
-    // 2. Local fallback reset
-    const localUsers = storage.getUsers();
-    const userIndex = localUsers.findIndex(
+    // 2. Local fallback reset using isolated auth store
+    const authUsers = storage.getAuthUsers();
+    const userIndex = authUsers.findIndex(
       u =>
         u.username?.toLowerCase() === cleanId ||
         u.id.toLowerCase() === cleanId ||
@@ -251,12 +250,12 @@ class SupabaseService {
       return { success: false, message: 'No account found with that username or email.' };
     }
 
-    const targetUser = localUsers[userIndex];
+    const targetUser = authUsers[userIndex];
     const isUserRecovery = targetUser.recoveryAnswer?.toLowerCase() === cleanKey.toLowerCase();
 
     if (isMasterRecovery || isUserRecovery) {
-      localUsers[userIndex].password = newPassword;
-      storage.saveUsers(localUsers);
+      authUsers[userIndex].password = newPassword;
+      storage.saveAuthUsers(authUsers);
       return { success: true, message: `Password for ${targetUser.name} has been reset successfully!` };
     }
 
@@ -314,12 +313,18 @@ class SupabaseService {
       }
     }
 
-    // Save to local cache
+    // Save credentials to isolated auth store
+    const authUsers = storage.getAuthUsers();
+    authUsers.push(profile);
+    storage.saveAuthUsers(authUsers);
+
+    // Save sanitized public profile for UI
     const current = storage.getUsers();
-    current.push(profile);
+    const { password: _p, pin: _pin, recoveryAnswer: _ra, ...safeProfile } = profile;
+    current.push(safeProfile);
     storage.saveUsers(current);
 
-    return { success: true, user: profile, message: `Challenger ${profile.name} added to squad!` };
+    return { success: true, user: safeProfile, message: `Challenger ${profile.name} added to squad!` };
   }
 
   public async updateUser(
@@ -350,15 +355,24 @@ class SupabaseService {
       }
     }
 
-    const localUsers = storage.getUsers();
-    const idx = localUsers.findIndex(u => u.id === userId);
+    // Update in isolated local auth store
+    const authUsers = storage.getAuthUsers();
+    const idx = authUsers.findIndex(u => u.id === userId);
     if (idx !== -1) {
-      localUsers[idx] = { ...localUsers[idx], ...updates };
-      storage.saveUsers(localUsers);
-      return { success: true, user: localUsers[idx] };
+      authUsers[idx] = { ...authUsers[idx], ...updates };
+      storage.saveAuthUsers(authUsers);
     }
 
-    return { success: false, message: 'User not found' };
+    // Update public sanitized profiles
+    const publicUsers = storage.getUsers();
+    const pIdx = publicUsers.findIndex(u => u.id === userId);
+    if (pIdx !== -1) {
+      const { password: _p, pin: _pin, recoveryAnswer: _ra, ...safeUpdates } = updates;
+      publicUsers[pIdx] = { ...publicUsers[pIdx], ...safeUpdates };
+      storage.saveUsers(publicUsers);
+    }
+
+    return { success: true, message: 'User updated successfully' };
   }
 
   public async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {

@@ -75,6 +75,22 @@ ALTER TABLE public.challenge_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.password_resets ENABLE ROW LEVEL SECURITY;
 
+-- 5.1 Public Safe View for Squad Profiles (Strictly excludes password, pin, recovery_answer)
+CREATE OR REPLACE VIEW public.squad_profiles AS
+SELECT 
+    id, 
+    username, 
+    name, 
+    email, 
+    avatar, 
+    color, 
+    role, 
+    deposit_amount, 
+    created_at 
+FROM public.profiles;
+
+GRANT SELECT ON public.squad_profiles TO anon, authenticated;
+
 -- 6. Setup Access Policies (Anon & Authenticated)
 DROP POLICY IF EXISTS "Allow anon read profiles" ON public.profiles;
 CREATE POLICY "Allow anon read profiles" ON public.profiles FOR SELECT USING (true);

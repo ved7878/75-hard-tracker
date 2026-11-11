@@ -3,6 +3,7 @@ import { DEFAULT_CONFIG } from './rulesEngine';
 
 const CONFIG_KEY = '75hard_challenge_config';
 const USERS_KEY = '75hard_users_list';
+const AUTH_CREDENTIALS_KEY = '75hard_auth_credentials';
 const ACTIVE_USER_KEY = '75hard_active_user_id';
 const LOGS_PREFIX = '75hard_logs_';
 const LEGACY_LOGS_KEY = '75hard_daily_logs';
@@ -14,6 +15,15 @@ export const DEFAULT_USERS: UserProfile[] = [
   { id: 'user_3', username: 'aryaman', name: 'Aryaman', email: 'aryaman@75hard.local', password: 'aryaman123', avatar: '🦅', color: 'from-amber-500 to-orange-600', role: 'challenger', pin: '3333', depositAmount: 2000 },
   { id: 'admin', username: 'admin', name: 'Referee / Admin', email: 'admin@75hard.local', password: 'admin7575', avatar: '⚖️', color: 'from-purple-600 to-indigo-800', role: 'admin', pin: '7575', depositAmount: 0 },
 ];
+
+/**
+ * Strips sensitive credentials (password, PIN, recovery secrets) from user objects
+ * before exposing to UI components, squad listings, or general state.
+ */
+export function sanitizeUser(user: UserProfile): UserProfile {
+  const { password: _p, pin: _pin, recoveryAnswer: _ra, ...safe } = user;
+  return safe;
+}
 
 export const storage = {
   getConfig(): ChallengeConfig {
@@ -36,51 +46,71 @@ export const storage = {
     }
   },
 
+  /**
+   * Returns SANITIZED public profiles for squad views, leaderboards, and dashboard.
+   * Passwords and PINs are strictly stripped.
+   */
   getUsers(): UserProfile[] {
     try {
       const stored = localStorage.getItem(USERS_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length >= 3) {
-          // Merge with DEFAULT_USERS to ensure all required fields (username, password, pin, etc.) exist
-          const merged = parsed.map(user => {
-            const def = DEFAULT_USERS.find(
-              d => d.id === user.id || d.username?.toLowerCase() === user.username?.toLowerCase() || d.name?.toLowerCase() === user.name?.toLowerCase()
-            );
-            if (def) {
-              return {
-                ...def,
-                ...user,
-                username: user.username || def.username,
-                password: user.password || def.password,
-                pin: user.pin || def.pin,
-                role: user.role || def.role,
-                depositAmount: user.depositAmount !== undefined ? user.depositAmount : def.depositAmount,
-              };
-            }
-            return user;
-          });
-
-          // Ensure admin user exists in list
-          if (!merged.some(u => u.role === 'admin' || u.id === 'admin')) {
-            merged.push(DEFAULT_USERS[3]);
-          }
-          storage.saveUsers(merged);
-          return merged;
+          return parsed.map(sanitizeUser);
         }
       }
     } catch (e) {
       console.error('Failed to load users from localStorage', e);
     }
-    storage.saveUsers(DEFAULT_USERS);
+    const safeDefaults = DEFAULT_USERS.map(sanitizeUser);
+    storage.saveUsers(safeDefaults);
+    return safeDefaults;
+  },
+
+  /**
+   * Saves sanitized profiles to USERS_KEY. Never stores raw credentials here.
+   */
+  saveUsers(users: UserProfile[]): void {
+    try {
+      const sanitized = users.map(sanitizeUser);
+      localStorage.setItem(USERS_KEY, JSON.stringify(sanitized));
+    } catch (e) {
+      console.error('Failed to save users to localStorage', e);
+    }
+  },
+
+  /**
+   * Internal auth store: Used exclusively for local offline authentication checks.
+   * Isolated from public UI state and never exposed to squad listings.
+   */
+  getAuthUsers(): UserProfile[] {
+    try {
+      const stored = localStorage.getItem(AUTH_CREDENTIALS_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length >= 3) {
+          // Merge with DEFAULT_USERS to ensure any missing fields are present
+          const merged = parsed.map(user => {
+            const def = DEFAULT_USERS.find(
+              d => d.id === user.id || d.username?.toLowerCase() === user.username?.toLowerCase() || d.name?.toLowerCase() === user.name?.toLowerCase()
+            );
+            return def ? { ...def, ...user } : user;
+          });
+          return merged;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load auth credentials from localStorage', e);
+    }
+    storage.saveAuthUsers(DEFAULT_USERS);
     return DEFAULT_USERS;
   },
 
-  saveUsers(users: UserProfile[]): void {
+  saveAuthUsers(users: UserProfile[]): void {
     try {
-      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      localStorage.setItem(AUTH_CREDENTIALS_KEY, JSON.stringify(users));
     } catch (e) {
-      console.error('Failed to save users to localStorage', e);
+      console.error('Failed to save auth credentials to localStorage', e);
     }
   },
 

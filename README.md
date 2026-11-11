@@ -33,11 +33,18 @@ A modern, mobile-first web application designed for the **75 HARD** challenge, s
 1. **Serverless & Scalable**: Pure JAMstack SPA deployed to Vercel with zero background server processes to crash or manage.
 2. **Hybrid Offline / Cloud Mode**: If Supabase credentials are not yet entered, the app gracefully runs in Local Cache mode and syncs to Supabase the moment credentials are provided.
 3. **Strict Today-Only Enforcement**: Challengers can only check off today's habits. Zero retro-filling.
-4. **Referee "Time-Machine" Access**: The Admin has master permissions to override past and future days for any challenger.
-5. **Dynamic Travel & Sickness Adaptation**:
+4. **Peer Penalty & Bounty Redistribution Engine**:
+   - 1 challenger misses on a day: -₹200 deducted, +₹100 credited to each of the 2 survivors.
+   - 2 challengers miss on a day: -₹200 deducted each (-₹400 total), +₹400 credited to the 1 survivor.
+   - All 3 miss or all 3 succeed: ₹0 transferred (mutual neutral).
+   - Squad pool is strictly conserved at ₹6,000 ($3 \times ₹2,000$) at all times.
+   - Admin referee deposit is strictly ₹0 (excluded from pool and penalties).
+5. **Referee "Time-Machine" Access**: The Admin has master permissions to override past and future days for any challenger.
+6. **Dynamic Travel & Sickness Adaptation**:
    - Travel $\le$4 hours: Standard rules.
    - Travel >4 hours: Wake-up extended to 8:00 AM; gym unavailable substituted with 15k steps OR 5.0 km run.
    - Genuine illness: Upload prescription $\rightarrow$ held in Admin Exception Queue $\rightarrow$ Admin approval marks day exempt and preserves streak.
+7. **Client-Side Image Optimization**: High-resolution mobile camera photos (5–15 MB) are automatically compressed to ~150 KB before saving or uploading, eliminating localStorage quota limits and saving bandwidth.
 
 ---
 

@@ -194,9 +194,7 @@ export const AdminPanelScreen: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 font-mono mt-0.5">
                     <span>ID: <strong className="text-slate-200">{c.username}</strong></span>
                     <span>•</span>
-                    <span>Pass: <strong className="text-rose-300">{c.password || `${c.username}123`}</strong></span>
-                    <span>•</span>
-                    <span>PIN: <strong className="text-amber-300">{c.pin || '1234'}</strong></span>
+                    <span className="text-emerald-400/90 font-medium">● Credentials Protected</span>
                   </div>
                 </div>
               </div>

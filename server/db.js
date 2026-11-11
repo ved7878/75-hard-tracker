@@ -194,7 +194,7 @@ class DatabaseManager {
     if (includeSecrets) {
       return this.store.users;
     }
-    return this.store.users.map(({ pin, ...safeUser }) => safeUser);
+    return this.store.users.map(({ pin, password, recoveryAnswer, ...safeUser }) => safeUser);
   }
 
   findUserByCredentials(username, secret) {
