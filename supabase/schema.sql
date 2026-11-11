@@ -59,6 +59,23 @@ CREATE TABLE IF NOT EXISTS public.daily_logs (
 CREATE INDEX IF NOT EXISTS idx_daily_logs_user_date ON public.daily_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_daily_logs_status ON public.daily_logs(status);
 
+-- 3.1 Daily nutrition (auto-filled from tasks.diet JSON; the app never writes these)
+ALTER TABLE public.daily_logs
+    ADD COLUMN IF NOT EXISTS calories NUMERIC
+    GENERATED ALWAYS AS (
+        CASE WHEN jsonb_typeof(tasks -> 'diet' -> 'calories') = 'number'
+             THEN (tasks -> 'diet' ->> 'calories')::numeric
+        END
+    ) STORED;
+
+ALTER TABLE public.daily_logs
+    ADD COLUMN IF NOT EXISTS protein_grams NUMERIC
+    GENERATED ALWAYS AS (
+        CASE WHEN jsonb_typeof(tasks -> 'diet' -> 'proteinGrams') = 'number'
+             THEN (tasks -> 'diet' ->> 'proteinGrams')::numeric
+        END
+    ) STORED;
+
 -- 4. Create PASSWORD RESETS Table
 CREATE TABLE IF NOT EXISTS public.password_resets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,6 +107,27 @@ SELECT
 FROM public.profiles;
 
 GRANT SELECT ON public.squad_profiles TO anon, authenticated;
+
+-- 5.2 Daily nutrition view (calories / protein vs. goals, per challenger per day)
+CREATE OR REPLACE VIEW public.daily_nutrition AS
+SELECT
+    l.user_id,
+    p.name                                            AS challenger,
+    l.date,
+    l.day_number,
+    COALESCE(l.calories, 0)                           AS calories,
+    COALESCE(l.protein_grams, 0)                      AS protein_grams,
+    (c.config ->> 'calorieTarget')::numeric           AS calorie_target,
+    (c.config ->> 'proteinTargetG')::numeric          AS protein_target_g,
+    ROUND(100 * COALESCE(l.calories, 0)
+          / NULLIF((c.config ->> 'calorieTarget')::numeric, 0), 1)   AS calories_pct_of_goal,
+    ROUND(100 * COALESCE(l.protein_grams, 0)
+          / NULLIF((c.config ->> 'proteinTargetG')::numeric, 0), 1)  AS protein_pct_of_goal
+FROM public.daily_logs l
+LEFT JOIN public.profiles p ON p.id = l.user_id
+LEFT JOIN public.challenge_config c ON c.id = 'current_config';
+
+GRANT SELECT ON public.daily_nutrition TO anon, authenticated;
 
 -- 6. Setup Access Policies (Anon & Authenticated)
 DROP POLICY IF EXISTS "Allow anon read profiles" ON public.profiles;
@@ -164,6 +202,7 @@ VALUES (
         "currencySymbol": "₹",
         "wakeUpTarget": "06:00",
         "wakeUpTravelTarget": "08:00",
+        "wakeUpGraceMinutes": 10,
         "travelThresholdHours": 4,
         "readingMinPages": 5,
         "readingMaxPages": 10,
@@ -173,11 +212,15 @@ VALUES (
         "travelSubstituteSteps": 15000,
         "travelSubstituteRunKm": 5.0,
         "familyTargetMinutes": 10,
+        "calorieTarget": 2200,
+        "proteinTargetG": 120,
         "reminderTime": "21:00",
         "reminderEnabled": true,
         "strictResetOnMiss": true,
         "lockPastDays": true,
-        "adminPin": "7575"
+        "adminPin": "7575",
+        "requireLogin": false,
+        "autoSyncSupabase": false
     }'::jsonb
 )
 ON CONFLICT (id) DO NOTHING;
