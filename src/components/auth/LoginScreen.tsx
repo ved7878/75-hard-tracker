@@ -68,11 +68,10 @@ export const LoginScreen: React.FC = () => {
           {/* Database Status Badge */}
           <div className="flex items-center justify-center space-x-1.5 pt-1">
             <span
-              className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                isCloudConnected
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  : 'bg-white/5 text-slate-400 border-white/10'
-              }`}
+              className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${isCloudConnected
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-white/5 text-slate-400 border-white/10'
+                }`}
             >
               <Database className="w-3 h-3 shrink-0" />
               <span>{isCloudConnected ? 'Supabase Cloud Connected' : 'Vercel Hybrid Mode Active'}</span>
@@ -94,7 +93,7 @@ export const LoginScreen: React.FC = () => {
                 autoFocus
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                placeholder="e.g. vedant, vedansh, aryaman, admin"
+                placeholder="user name"
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
               />
             </div>
