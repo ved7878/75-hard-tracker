@@ -7,8 +7,10 @@ interface StreakBannerProps {
 }
 
 export const StreakBanner: React.FC<StreakBannerProps> = ({ onGoToTracker }) => {
-  const { streakStats, config, isAdmin } = useChallenge();
+  const { streakStats, config, isAdmin, currentUser, squadMembers } = useChallenge();
   const isReset = streakStats.resetsCount > 0 && streakStats.currentStreak === 0;
+  const currentMember = squadMembers.find(m => m.user.id === currentUser?.id);
+  const liveDeposit = currentMember?.currentDeposit ?? config.depositAmount;
 
   if (isAdmin) {
     return (
@@ -88,11 +90,23 @@ export const StreakBanner: React.FC<StreakBannerProps> = ({ onGoToTracker }) => 
           </div>
 
           <div className="text-right">
-            <div className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
+            <div className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md border text-xs font-bold ${
+              (currentMember?.netDepositChange ?? 0) < 0
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : (currentMember?.netDepositChange ?? 0) > 0
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-sm'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            }`}>
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>{config.currencySymbol}{config.depositAmount} Protected</span>
+              <span>{config.currencySymbol}{liveDeposit.toLocaleString()} Active</span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">Zero compromise rule</p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {(currentMember?.netDepositChange ?? 0) < 0
+                ? `(-${config.currencySymbol}${Math.abs(currentMember?.netDepositChange || 0)} penalty)`
+                : (currentMember?.netDepositChange ?? 0) > 0
+                ? `(+${config.currencySymbol}${currentMember?.netDepositChange || 0} bounty)`
+                : 'Zero compromise rule'}
+            </p>
           </div>
         </div>
       )}
