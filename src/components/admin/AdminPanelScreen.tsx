@@ -153,9 +153,8 @@ export const AdminPanelScreen: React.FC = () => {
           </span>
           <button
             onClick={() => setAdminOverrideMode(!adminOverrideMode)}
-            className={`p-1.5 rounded-lg transition-all ${
-              adminOverrideMode ? 'bg-amber-500 text-black' : 'bg-white/10 text-slate-400'
-            }`}
+            className={`p-1.5 rounded-lg transition-all ${adminOverrideMode ? 'bg-amber-500 text-black' : 'bg-white/10 text-slate-400'
+              }`}
             title="Toggle time-machine override mode"
           >
             {adminOverrideMode ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
@@ -200,13 +199,12 @@ export const AdminPanelScreen: React.FC = () => {
               </div>
 
               <div className="flex items-center space-x-1.5">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                  (depositLedger?.balances[c.id]?.netChange ?? 0) < 0
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${(depositLedger?.balances[c.id]?.netChange ?? 0) < 0
                     ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
                     : (depositLedger?.balances[c.id]?.netChange ?? 0) > 0
-                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                    : 'bg-white/5 text-slate-300 border-white/10'
-                }`}>
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                      : 'bg-white/5 text-slate-300 border-white/10'
+                  }`}>
                   {config.currencySymbol}{(depositLedger?.balances[c.id]?.currentDeposit ?? c.depositAmount ?? 2000).toLocaleString()}
                 </span>
 
@@ -555,11 +553,10 @@ export const AdminPanelScreen: React.FC = () => {
               <div
                 key={item.id}
                 onClick={() => handleAdminToggleTask(item.id)}
-                className={`p-2 rounded-lg border flex items-center justify-between cursor-pointer transition-all active:scale-95 ${
-                  item.isCompleted
+                className={`p-2 rounded-lg border flex items-center justify-between cursor-pointer transition-all active:scale-95 ${item.isCompleted
                     ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
                     : 'bg-white/[0.02] border-white/[0.06] text-slate-300 hover:border-white/20'
-                }`}
+                  }`}
               >
                 <div className="flex items-center space-x-2">
                   <input
@@ -593,11 +590,10 @@ export const AdminPanelScreen: React.FC = () => {
                   },
                 }));
               }}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
-                currentTargetLog.sickness.isExempt
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${currentTargetLog.sickness.isExempt
                   ? 'bg-blue-600 text-white'
                   : 'bg-white/10 text-slate-400 hover:text-white'
-              }`}
+                }`}
             >
               {currentTargetLog.sickness.isExempt ? 'Exemption Granted ✓' : 'Make Exempt'}
             </button>
@@ -614,9 +610,8 @@ export const AdminPanelScreen: React.FC = () => {
               Supabase DB & Vercel Hosting
             </h3>
           </div>
-          <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-            dbSettings?.isConnected ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-          }`}>
+          <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${dbSettings?.isConnected ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+            }`}>
             {dbSettings?.isConnected ? 'Cloud Connected' : 'Vercel Hybrid Mode'}
           </span>
         </div>

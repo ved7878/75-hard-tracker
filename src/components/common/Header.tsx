@@ -163,8 +163,8 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           </div>
         </div>
 
-        {/* SQUAD MEMBER QUICK SWITCHER (IF ADMIN OR MULTI-USER) */}
-        {isAdmin && squadMembers.length > 0 && (
+        {/* SQUAD MEMBER QUICK SWITCHER (IF ADMIN PREVIEWING CHECKLIST) */}
+        {isAdmin && squadMembers.length > 0 && activeTab === 'tracker' && (
           <div className="bg-black/40 rounded-xl p-1 border border-white/[0.06] flex items-center justify-between gap-1">
             {squadMembers.map(member => {
               const isSelected = member.user.id === currentUser?.id;
@@ -197,52 +197,54 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           </div>
         )}
 
-        {/* Date Navigator Bar with Admin Override indication */}
-        <div className="pt-1 flex items-center justify-between">
-          <button
-            onClick={handlePrevDay}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
-            title="Previous Day"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center space-x-2">
+        {/* Date Navigator Bar ONLY on Checklist / Tracker screen */}
+        {activeTab === 'tracker' && (
+          <div className="pt-1 flex items-center justify-between">
             <button
-              onClick={handleTodayClick}
-              className={`text-xs font-semibold px-2 py-0.5 rounded transition-all flex items-center space-x-1.5 ${isToday
-                  ? 'bg-rose-600 text-white shadow-sm'
-                  : adminOverrideMode || isAdmin
-                    ? 'bg-purple-950/60 text-purple-300 border border-purple-500/50'
-                    : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
-                }`}
+              onClick={handlePrevDay}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+              title="Previous Day"
             >
-              <Calendar className="w-3 h-3" />
-              <span>{formattedDisplayDate}</span>
-              {isToday ? (
-                <span className="text-[10px] bg-white/20 px-1 rounded font-bold">TODAY</span>
-              ) : adminOverrideMode || isAdmin ? (
-                <span className="text-[10px] bg-purple-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
-                  <Unlock className="w-2.5 h-2.5 text-purple-300" />
-                  <span>OVERRIDE EDITABLE</span>
-                </span>
-              ) : (
-                <span className="text-[10px] bg-amber-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
-                  <Lock className="w-2.5 h-2.5" />
-                  <span>LOCKED</span>
-                </span>
-              )}
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleTodayClick}
+                className={`text-xs font-semibold px-2 py-0.5 rounded transition-all flex items-center space-x-1.5 ${isToday
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : adminOverrideMode || isAdmin
+                      ? 'bg-purple-950/60 text-purple-300 border border-purple-500/50'
+                      : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
+                  }`}
+              >
+                <Calendar className="w-3 h-3" />
+                <span>{formattedDisplayDate}</span>
+                {isToday ? (
+                  <span className="text-[10px] bg-white/20 px-1 rounded font-bold">TODAY</span>
+                ) : adminOverrideMode || isAdmin ? (
+                  <span className="text-[10px] bg-purple-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
+                    <Unlock className="w-2.5 h-2.5 text-purple-300" />
+                    <span>OVERRIDE EDITABLE</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-amber-500/30 px-1 rounded font-bold flex items-center space-x-0.5">
+                    <Lock className="w-2.5 h-2.5" />
+                    <span>LOCKED</span>
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <button
+              onClick={handleNextDay}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+              title="Next Day"
+            >
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-
-          <button
-            onClick={handleNextDay}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
-            title="Next Day"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+        )}
       </div>
     </header>
   );

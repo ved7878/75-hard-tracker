@@ -1,38 +1,32 @@
 import React, { useState } from 'react';
 import {
-  ShieldAlert,
-  KeyRound,
   Lock,
   Eye,
   EyeOff,
   AlertCircle,
   ArrowRight,
-  UserCheck,
   Database,
   HelpCircle,
-  Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { supabaseService } from '../../services/supabaseService';
 
 export const LoginScreen: React.FC = () => {
-  const { loginChallenger, loginAdmin } = useChallenge();
-  const [isAdminTab, setIsAdminTab] = useState(false);
+  const { login } = useChallenge();
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
-  // Challenger form state
+  // Form state
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [adminPasswordOrPin, setAdminPasswordOrPin] = useState('');
-  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   const isCloudConnected = supabaseService.isConfigured();
 
-  const handleChallengerSubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -46,30 +40,17 @@ export const LoginScreen: React.FC = () => {
     }
 
     setLoading(true);
-    const res = await loginChallenger(username.trim(), password);
+    const res = await login(username.trim(), password);
     setLoading(false);
 
     if (!res.success) {
-      setErrorMsg(res.error || 'Invalid credentials. Check your username and password.');
-    }
-  };
-
-  const handleAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setLoading(true);
-
-    const res = await loginAdmin(adminPasswordOrPin);
-    setLoading(false);
-
-    if (!res.success) {
-      setErrorMsg(res.error || 'Invalid Admin Password or PIN.');
+      setErrorMsg(res.error || 'Invalid credentials. Check your username and password/PIN.');
     }
   };
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white flex flex-col justify-center items-center px-4 py-8 font-sans selection:bg-rose-600">
-      {/* Background glowing athletic backdrop */}
+      {/* Background athletic neon glow backdrop */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-rose-600/10 blur-[100px] pointer-events-none rounded-full" />
       <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-purple-600/10 blur-[100px] pointer-events-none rounded-full" />
 
@@ -81,10 +62,10 @@ export const LoginScreen: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white uppercase">75 HARD</h1>
           <p className="text-xs text-slate-400 font-medium">
-            Mental Toughness Challenge • Authenticate to enter
+            Mental Toughness Challenge • Sign in to continue
           </p>
 
-          {/* Database & Hosting Status Badge */}
+          {/* Database Status Badge */}
           <div className="flex items-center justify-center space-x-1.5 pt-1">
             <span
               className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -99,167 +80,77 @@ export const LoginScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Auth Card */}
+        {/* Unified Authentication Card (No separate module for Admin) */}
         <div className="rounded-2xl glass-card border border-white/[0.08] shadow-2xl overflow-hidden text-xs">
-          {/* Tabs */}
-          <div className="grid grid-cols-2 p-1.5 bg-black/60 border-b border-white/[0.06] gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setIsAdminTab(false);
-                setErrorMsg('');
-              }}
-              className={`py-2 rounded-xl font-bold transition-all flex items-center justify-center space-x-1.5 ${
-                !isAdminTab
-                  ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>Challenger Login</span>
-            </button>
+          <form onSubmit={handleLoginSubmit} className="p-5 space-y-4">
+            {/* Username / User ID / Admin */}
+            <div className="space-y-1">
+              <label className="text-slate-300 font-bold block text-[11px]">
+                Username / User ID:
+              </label>
+              <input
+                type="text"
+                required
+                autoFocus
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="e.g. vedant, vedansh, aryaman, admin"
+                className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsAdminTab(true);
-                setErrorMsg('');
-              }}
-              className={`py-2 rounded-xl font-bold transition-all flex items-center justify-center space-x-1.5 ${
-                isAdminTab
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>Admin Portal</span>
-            </button>
-          </div>
-
-          <div className="p-5 space-y-4">
-            {!isAdminTab ? (
-              /* CHALLENGER LOGIN FORM */
-              <form onSubmit={handleChallengerSubmit} className="space-y-4">
-                {/* Username or Email Input */}
-                <div className="space-y-1">
-                  <label className="text-slate-300 font-bold block text-[11px]">User ID / Username:</label>
-                  <input
-                    type="text"
-                    required
-                    autoFocus
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    placeholder="Enter your username (e.g. vedant)"
-                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-
-                {/* Password / PIN input */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-slate-300 font-bold block text-[11px]">Password or 4-Digit PIN:</label>
-                    <button
-                      type="button"
-                      onClick={() => setIsForgotPasswordOpen(true)}
-                      className="text-[10px] text-rose-400 hover:text-rose-300 font-bold"
-                    >
-                      Forgot Password?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="Enter password or 4-digit PIN"
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {errorMsg && (
-                  <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-300 text-[11px] flex items-center space-x-1.5">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{errorMsg}</span>
-                  </div>
-                )}
-
+            {/* Password / PIN input */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-300 font-bold block text-[11px]">
+                  Password or 4-Digit PIN:
+                </label>
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-extrabold text-xs shadow-glow-red transition-all active:scale-95 flex items-center justify-center space-x-1.5"
+                  type="button"
+                  onClick={() => setIsForgotPasswordOpen(true)}
+                  className="text-[10px] text-rose-400 hover:text-rose-300 font-bold"
                 >
-                  <span>{loading ? 'Authenticating...' : 'Enter 75 HARD Tracker'}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  Forgot Password?
                 </button>
-              </form>
-            ) : (
-              /* ADMIN LOGIN FORM */
-              <form onSubmit={handleAdminSubmit} className="space-y-4">
-                <div className="space-y-1 text-center pb-1">
-                  <span className="inline-block p-2 rounded-xl bg-purple-500/20 text-purple-400 mb-1">
-                    <KeyRound className="w-5 h-5" />
-                  </span>
-                  <h3 className="font-bold text-white text-sm">Referee / Admin Portal</h3>
-                  <p className="text-[11px] text-slate-400">
-                    User creation, rule configuration, sickness reviews & time overrides.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-slate-300 font-bold block">Admin Password or PIN:</label>
-                    <span className="text-[10px] text-slate-500">Default PIN: 7575</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showAdminPassword ? 'text' : 'password'}
-                      required
-                      autoFocus
-                      value={adminPasswordOrPin}
-                      onChange={e => setAdminPasswordOrPin(e.target.value)}
-                      placeholder="Enter Admin PIN (7575) or Password"
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-center text-xs font-mono tracking-widest text-white focus:outline-none focus:border-purple-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowAdminPassword(!showAdminPassword)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
-                    >
-                      {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {errorMsg && (
-                  <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-300 text-[11px] flex items-center space-x-1.5">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{errorMsg}</span>
-                  </div>
-                )}
-
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter your password or PIN"
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-lg transition-all active:scale-95 flex items-center justify-center space-x-1.5"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
                 >
-                  <span>{loading ? 'Verifying...' : 'Unlock Admin Panel'}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
-              </form>
+              </div>
+            </div>
+
+            {errorMsg && (
+              <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-300 text-[11px] flex items-center space-x-1.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
             )}
-          </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-extrabold text-xs shadow-glow-red transition-all active:scale-95 flex items-center justify-center space-x-1.5 disabled:opacity-50"
+            >
+              <span>{loading ? 'Authenticating...' : 'Enter 75 HARD'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </form>
         </div>
 
-        {/* Footer info */}
+        {/* Footer Info */}
         <div className="flex items-center justify-between px-2 text-[11px] text-slate-500">
           <span>75 HARD Squad Tracker</span>
           <button

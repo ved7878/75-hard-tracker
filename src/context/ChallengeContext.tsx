@@ -32,6 +32,7 @@ interface ChallengeContextType {
   isAdmin: boolean;
   adminOverrideMode: boolean;
   setAdminOverrideMode: (val: boolean) => void;
+  login: (usernameOrEmail: string, passwordOrPin: string) => Promise<{ success: boolean; error?: string }>;
   loginChallenger: (usernameOrEmail: string, passwordOrPin: string) => Promise<{ success: boolean; error?: string }>;
   loginAdmin: (passwordOrPin: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -223,29 +224,21 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setupDailyReminder(config.reminderTime, config.reminderEnabled);
   }, [config.reminderTime, config.reminderEnabled]);
 
-  // Challenger Login
-  const loginChallenger = async (usernameOrEmail: string, passwordOrPin: string) => {
-    const res = await supabaseService.login(usernameOrEmail, passwordOrPin);
-    if (res.success && res.user) {
-      setCurrentUser(res.user);
-      localStorage.setItem(AUTH_STORAGE_KEY, res.user.id);
-      await reloadData();
-      return { success: true };
-    }
-    return { success: false, error: res.message || 'Invalid username or password.' };
-  };
-
-  // Admin Login
-  const loginAdmin = async (passwordOrPin: string) => {
+  // Unified Login (handles challenger or admin credentials seamlessly without separate login modules)
+  const login = async (usernameOrEmail: string, passwordOrPin: string) => {
+    const cleanId = usernameOrEmail.trim().toLowerCase();
     const cleanSecret = passwordOrPin.trim();
+
+    // 1. Direct Admin Credential Check
     const adminPin = config.adminPin || '7575';
     const adminPass = config.adminPassword || 'admin7575';
 
     if (
-      cleanSecret === adminPin ||
-      cleanSecret === adminPass ||
-      cleanSecret === '7575' ||
-      cleanSecret === 'admin7575'
+      (cleanId === 'admin' || cleanId === 'referee') &&
+      (cleanSecret === adminPin ||
+        cleanSecret === adminPass ||
+        cleanSecret === '7575' ||
+        cleanSecret === 'admin7575')
     ) {
       const adminUser: UserProfile = {
         id: 'admin',
@@ -263,7 +256,28 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { success: true };
     }
 
-    return { success: false, error: 'Invalid Admin Password or PIN.' };
+    // 2. Challenger / User Login
+    const res = await supabaseService.login(cleanId, cleanSecret);
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      localStorage.setItem(AUTH_STORAGE_KEY, res.user.id);
+      if (res.user.role === 'admin') {
+        setAdminOverrideMode(true);
+      }
+      await reloadData();
+      return { success: true };
+    }
+    return { success: false, error: res.message || 'Invalid username, password, or PIN.' };
+  };
+
+  // Challenger Login (alias to unified login)
+  const loginChallenger = async (usernameOrEmail: string, passwordOrPin: string) => {
+    return login(usernameOrEmail, passwordOrPin);
+  };
+
+  // Admin Login
+  const loginAdmin = async (passwordOrPin: string) => {
+    return login('admin', passwordOrPin);
   };
 
   // Logout
@@ -473,6 +487,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     isAdmin,
     adminOverrideMode,
     setAdminOverrideMode,
+    login,
     loginChallenger,
     loginAdmin,
     logout,
