@@ -4,6 +4,7 @@ import {
   ChallengeConfig,
   DailyLog,
   StreakStats,
+  TravelInfo,
   UserProfile,
   SquadMemberStatus,
   PendingExceptionItem,
@@ -13,6 +14,7 @@ import {
   DEFAULT_CONFIG,
   createDefaultLog,
   formatDate,
+  addDays,
   calculateStreakStats,
   computeDayStatus,
   validateDayTasks,
@@ -22,6 +24,8 @@ import {
   normalizeConfig,
   isWakeUpCheckInOpen,
   currentTimeHHMM,
+  getEffectiveWakeUpTarget,
+  applyLateTravelLock,
 } from '../services/rulesEngine';
 import { supabaseService } from '../services/supabaseService';
 import { sound } from '../services/audio';
@@ -67,6 +71,10 @@ interface ChallengeContextType {
   setCurrentDate: (date: string) => void;
   currentLog: DailyLog;
   updateCurrentLog: (updater: (prev: DailyLog) => DailyLog) => Promise<boolean>;
+  /** Tomorrow's log for the active challenger (travel can be planned the day before) */
+  tomorrowLog: DailyLog;
+  /** Plan tomorrow's travel / gym access today – only the travel section of tomorrow's log changes */
+  updateTomorrowTravel: (patch: Partial<TravelInfo>) => Promise<boolean>;
   streakStats: StreakStats;
   squadMembers: SquadMemberStatus[];
   depositLedger: SquadDepositLedger;
@@ -394,7 +402,18 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const existing =
         rawLogsRef.current[currentUser.id]?.[currentDate] || createDefaultLog(currentDate, config, currentUser.id);
       const before = validateDayTasks(existing, config);
-      const updated = updater(existing);
+      let updated = updater(existing);
+
+      // Long travel switched on after the 6:10 check-in closed doesn't move today's wake-up
+      // target. The referee can still change travel freely (and that clears the flag).
+      if (!isAdmin) {
+        updated = applyLateTravelLock(existing, updated, config);
+      } else if (
+        updated.travel.addedAfterWakeUp &&
+        (updated.travel.isTravelling !== existing.travel.isTravelling || updated.travel.hours !== existing.travel.hours)
+      ) {
+        updated = { ...updated, travel: { ...updated.travel, addedAfterWakeUp: false } };
+      }
 
       // Wake-up check-in window: challengers can only check in until target + buffer
       // (e.g. 6:10 AM), and the time recorded is the real clock time – not a typed one.
@@ -442,6 +461,50 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return true;
     },
     [currentUser, currentDate, config, isEditable, isAdmin]
+  );
+
+  // Tomorrow's travel plan: lets a challenger set tomorrow's trip (and so tomorrow's
+  // wake-up target) the night before. Only the travel section is written – habits for
+  // tomorrow stay sealed until tomorrow.
+  const tomorrowStr = addDays(todayStr, 1);
+  const tomorrowLog = useMemo(
+    () => logs[tomorrowStr] || createDefaultLog(tomorrowStr, config, currentUser?.id || 'user_1'),
+    [logs, tomorrowStr, config, currentUser]
+  );
+
+  const updateTomorrowTravel = useCallback(
+    async (patch: Partial<TravelInfo>): Promise<boolean> => {
+      if (!currentUser || currentUser.id === 'admin') return false;
+      const date = addDays(formatDate(new Date()), 1);
+      const existing = rawLogsRef.current[currentUser.id]?.[date] || createDefaultLog(date, config, currentUser.id);
+      const travel: TravelInfo = { ...existing.travel, ...patch, plannedAt: new Date().toISOString() };
+      if (!travel.isTravelling) travel.hours = 0;
+      const updated: DailyLog = {
+        ...existing,
+        travel,
+        userId: currentUser.id,
+        id: `${currentUser.id}_${date}`,
+        dayNumber: getDayNumber(date, config.startDate),
+        updatedAt: new Date().toISOString(),
+      };
+      // Keep the wake-up target in step with the plan
+      updated.tasks = {
+        ...updated.tasks,
+        wakeUp: {
+          ...updated.tasks.wakeUp,
+          effectiveTarget: getEffectiveWakeUpTarget(travel.hours, travel.isTravelling, config),
+        },
+      };
+      updated.status = computeDayStatus(updated, config);
+
+      setLogsNow(prev => ({
+        ...prev,
+        [currentUser.id]: { ...(prev[currentUser.id] || {}), [date]: updated },
+      }));
+      supabaseService.saveLogDebounced(currentUser.id, updated);
+      return true;
+    },
+    [currentUser, config]
   );
 
   // Admin: Update System Config
@@ -607,6 +670,8 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCurrentDate,
     currentLog,
     updateCurrentLog,
+    tomorrowLog,
+    updateTomorrowTravel,
     streakStats,
     squadMembers,
     depositLedger,

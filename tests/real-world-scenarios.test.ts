@@ -23,6 +23,7 @@ import {
   isWakeUpCheckInOpen,
   normalizeConfig,
   getChallengePhase,
+  applyLateTravelLock,
 } from '../src/services/rulesEngine.ts';
 
 // Helper: produce a fully completed day's tasks
@@ -173,6 +174,91 @@ describe('4. Travel Scenarios & Conditional Rules', () => {
       DEFAULT_CONFIG
     );
     assert.strictEqual(failSub.satisfied, false);
+  });
+
+  it('No gym (any day, not just long travel): Physical Activity at 15K steps / 5 km / 30 floors covers the gym', () => {
+    const noGym = { isTravelling: false, hours: 0, gymAvailable: false };
+    const gym = { completed: false };
+    const pa = (type: 'steps' | 'run' | 'floors', value: number) => ({ completed: true, type, value });
+
+    assert.strictEqual(evaluateGymCompletion(gym, noGym, DEFAULT_CONFIG, pa('steps', 15000)).satisfied, true);
+    assert.strictEqual(evaluateGymCompletion(gym, noGym, DEFAULT_CONFIG, pa('run', 5)).satisfied, true);
+    assert.strictEqual(evaluateGymCompletion(gym, noGym, DEFAULT_CONFIG, pa('floors', 30)).satisfied, true);
+
+    // Normal targets are not enough to cover the gym
+    assert.strictEqual(evaluateGymCompletion(gym, noGym, DEFAULT_CONFIG, pa('steps', 10000)).satisfied, false);
+    assert.strictEqual(evaluateGymCompletion(gym, noGym, DEFAULT_CONFIG, pa('floors', 20)).satisfied, false);
+
+    // A bare "gym done" tick doesn't count on a no-gym day
+    assert.strictEqual(evaluateGymCompletion({ completed: true }, noGym, DEFAULT_CONFIG, pa('steps', 0)).satisfied, false);
+  });
+
+  it('No gym day: Gym habit is removed (10 habits) and Physical Activity needs 15K steps', () => {
+    const base = createDefaultLog(formatDate(new Date()), DEFAULT_CONFIG, 'user_1');
+    base.travel = { ...base.travel, gymAvailable: false };
+
+    const at15k = { ...base, tasks: { ...base.tasks, physicalActivity: { completed: true, type: 'steps' as const, value: 15000 } } };
+    const r15 = validateDayTasks(at15k, DEFAULT_CONFIG);
+    assert.strictEqual(r15.totalCount, 10);
+    assert.strictEqual(r15.items.some(i => i.id === 'gym'), false);
+    assert.strictEqual(r15.items.find(i => i.id === 'physicalActivity')?.isCompleted, true);
+
+    // 10K steps (even with a stale "completed" flag) is not enough without a gym
+    const at10k = { ...base, tasks: { ...base.tasks, physicalActivity: { completed: true, type: 'steps' as const, value: 10000 } } };
+    assert.strictEqual(validateDayTasks(at10k, DEFAULT_CONFIG).items.find(i => i.id === 'physicalActivity')?.isCompleted, false);
+
+    // Gym available: 11 habits, normal 10K target
+    assert.strictEqual(validateDayTasks(createDefaultLog(formatDate(new Date()), DEFAULT_CONFIG, 'user_1'), DEFAULT_CONFIG).totalCount, 11);
+  });
+
+  it('Older no-gym logs with the substitute on the gym card still pass activity', () => {
+    const log = createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_1');
+    log.travel = { isTravelling: true, hours: 6, gymAvailable: false };
+    log.tasks.gym = { completed: true, isSubstituted: true, substituteType: 'steps', substituteValue: 15000 };
+    log.tasks.physicalActivity = { completed: true, type: 'steps', value: 10000 };
+    assert.strictEqual(validateDayTasks(log, DEFAULT_CONFIG).items.find(i => i.id === 'physicalActivity')?.isCompleted, true);
+  });
+
+  it('Long travel switched on after the 6:10 check-in closed does not move the wake-up', () => {
+    const at = (hhmm: string) => {
+      const [h, m] = hhmm.split(':').map(Number);
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      return d;
+    };
+    const today = createDefaultLog(formatDate(new Date()), DEFAULT_CONFIG, 'user_1');
+    const withTrip = { ...today, travel: { ...today.travel, isTravelling: true, hours: 6 } };
+
+    // Set at 5:30 AM: wake-up moves to 8:00 (deadline 8:10)
+    const early = applyLateTravelLock(today, withTrip, DEFAULT_CONFIG, at('05:30'));
+    assert.strictEqual(getWakeUpDeadline(early, DEFAULT_CONFIG), '08:10');
+
+    // Set at 7:30 AM after missing the check-in: recorded, but the deadline stays 6:10
+    const late = applyLateTravelLock(today, withTrip, DEFAULT_CONFIG, at('07:30'));
+    assert.strictEqual(late.travel.isTravelling, true);
+    assert.strictEqual(late.travel.addedAfterWakeUp, true);
+    assert.strictEqual(getWakeUpDeadline(late, DEFAULT_CONFIG), '06:10');
+    assert.strictEqual(isWakeUpCheckInOpen(late, DEFAULT_CONFIG, at('07:35')), false);
+
+    // Toggling travel off and on again can't clear the flag
+    const off = applyLateTravelLock(late, { ...late, travel: { ...late.travel, isTravelling: false, addedAfterWakeUp: false } }, DEFAULT_CONFIG, at('07:40'));
+    assert.strictEqual(off.travel.addedAfterWakeUp, true);
+
+    // A trip planned the night before keeps the 8:10 deadline even when edited later
+    const planned = { ...withTrip, travel: { ...withTrip.travel, plannedAt: 'yesterday' } };
+    const edited = applyLateTravelLock(planned, { ...planned, travel: { ...planned.travel, hours: 8 } }, DEFAULT_CONFIG, at('07:30'));
+    assert.strictEqual(getWakeUpDeadline(edited, DEFAULT_CONFIG), '08:10');
+  });
+
+  it('Travel planned for tomorrow moves tomorrow’s wake-up deadline to 8:10 AM', () => {
+    const tomorrow = createDefaultLog('2026-11-13', DEFAULT_CONFIG, 'user_1');
+    tomorrow.travel = { ...tomorrow.travel, isTravelling: true, hours: 6, plannedAt: '2026-11-12T21:00:00.000Z' };
+    assert.strictEqual(getWakeUpDeadline(tomorrow, DEFAULT_CONFIG), '08:10');
+  });
+
+  it('Gym-swap floors target defaults to 30 and survives a cleared admin box', () => {
+    assert.strictEqual(normalizeConfig({}).travelSubstituteFloors, 30);
+    assert.strictEqual(normalizeConfig({ travelSubstituteFloors: 0 }).travelSubstituteFloors, 30);
   });
 });
 

@@ -14,8 +14,7 @@ import {
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
-  getEffectiveWakeUpTarget,
-  evaluateGymCompletion,
+  getLogWakeUpTarget,
   validateDayTasks,
   formatDate,
   parseDate,
@@ -24,6 +23,10 @@ import {
   getChallengePhase,
   getWakeUpDeadline,
   isWakeUpCheckInOpen,
+  isGymUnavailable,
+  getNormalActivityTarget,
+  getNoGymActivityTarget,
+  describeNoGymTargets,
 } from '../../services/rulesEngine';
 import { useNow } from '../../hooks/useNow';
 import { toggleTask, isLateWakeUp } from '../../services/taskActions';
@@ -127,16 +130,16 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
   }, [focusTaskId]);
 
   const { tasks, travel, sickness } = currentLog;
-  const wakeTarget = getEffectiveWakeUpTarget(travel.hours, travel.isTravelling, config);
+  const wakeTarget = getLogWakeUpTarget(currentLog, config);
   const wakeDeadline = getWakeUpDeadline(currentLog, config);
   const wakeWindowOpen = isWakeUpCheckInOpen(currentLog, config, now);
-  const gymEval = evaluateGymCompletion(tasks.gym, travel, config);
   const { items, completedCount, totalCount, allCompleted } = validateDayTasks(currentLog, config);
   const done = (id: keyof TaskState) => items.find(i => i.id === id)?.isCompleted ?? false;
   const desc = (id: keyof TaskState) => items.find(i => i.id === id)?.requirementDesc ?? '';
   const title = (id: keyof TaskState) => items.find(i => i.id === id)?.title ?? '';
   const phase = getChallengePhase(currentDate, config);
-  const gymSubMode = travel.isTravelling && travel.hours > config.travelThresholdHours && !travel.gymAvailable;
+  // No gym today (set on Travel & sick days): activity targets are bumped and cover the gym habit
+  const noGym = isGymUnavailable(travel);
   const disabled = !isEditable;
 
   if (isAdmin && currentUser?.id === 'admin') {
@@ -205,10 +208,11 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
     }
   };
 
+  const activityTarget = (t: ActivityType) => (noGym ? getNoGymActivityTarget(t, config) : getNormalActivityTarget(t, config));
   const activityTargets: Record<ActivityType, { label: string; unit: string; target: number; step: string }> = {
-    steps: { label: `${(config.stepsTarget / 1000).toFixed(0)}K steps`, unit: 'steps', target: config.stepsTarget, step: '100' },
-    run: { label: `${config.runTargetKm} km`, unit: 'km', target: config.runTargetKm, step: '0.1' },
-    floors: { label: `${config.floorsTarget} floors`, unit: 'floors', target: config.floorsTarget, step: '1' },
+    steps: { label: `${(activityTarget('steps') / 1000).toFixed(0)}K steps`, unit: 'steps', target: activityTarget('steps'), step: '100' },
+    run: { label: `${activityTarget('run')} km`, unit: 'km', target: activityTarget('run'), step: '0.1' },
+    floors: { label: `${activityTarget('floors')} floors`, unit: 'floors', target: activityTarget('floors'), step: '1' },
   };
   const pa = tasks.physicalActivity;
   const paTarget = activityTargets[pa.type] || activityTargets.steps;
@@ -307,10 +311,15 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
           <span className="flex-1 min-w-0 text-sm">
             {travel.isTravelling ? (
               <span className="text-amber-200">
-                Travelling {travel.hours} h{sickness.isSick ? ' · sick day requested' : ''}
+                Travelling {travel.hours} h{noGym ? ' · no gym' : ''}{sickness.isSick ? ' · sick day requested' : ''}
               </span>
             ) : sickness.isSick ? (
-              <span className="text-sky-300">Sick day · {sickness.status === 'pending' ? 'waiting for referee' : 'proof needed'}</span>
+              <span className="text-sky-300">
+                Sick day · {sickness.status === 'pending' ? 'waiting for referee' : 'proof needed'}
+                {noGym ? ' · no gym' : ''}
+              </span>
+            ) : noGym ? (
+              <span className="text-violet-300">No gym today · {describeNoGymTargets(config)}</span>
             ) : (
               <span className="text-zinc-400">{isToday ? 'Travelling or sick today?' : 'Travel or sick day?'}</span>
             )}
@@ -414,40 +423,9 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
           />
         </TaskCard>
 
-        <TaskCard
-          {...card('gym', {
-            subtitle: gymSubMode ? desc('gym') : tasks.gym.workoutNotes || desc('gym'),
-            badge: gymEval.isSubstituted ? <Chip tone="amber">Travel</Chip> : undefined,
-          })}
-        >
-          {gymSubMode ? (
-            <>
-              <p className="text-[13px] text-amber-200/80 pt-3">No gym while travelling – do one of these instead.</p>
-              <Segmented
-                disabled={disabled}
-                value={tasks.gym.substituteType || 'steps'}
-                onChange={v => update('gym', { substituteType: v, substituteValue: 0, completed: false })}
-                options={[
-                  { value: 'steps', label: `${config.travelSubstituteSteps.toLocaleString('en-IN')} steps` },
-                  { value: 'run', label: `${config.travelSubstituteRunKm} km run` },
-                ]}
-              />
-              <input
-                type="number"
-                inputMode="decimal"
-                className="input"
-                disabled={disabled}
-                placeholder={tasks.gym.substituteType === 'run' ? 'Kilometres run' : 'Steps walked'}
-                value={tasks.gym.substituteValue || ''}
-                onChange={e => {
-                  const val = parseFloat(e.target.value) || 0;
-                  const ok =
-                    tasks.gym.substituteType === 'run' ? val >= config.travelSubstituteRunKm : val >= config.travelSubstituteSteps;
-                  update('gym', { substituteValue: val, completed: ok, isSubstituted: true });
-                }}
-              />
-            </>
-          ) : (
+        {/* No gym today: the Gym habit is dropped and Physical Activity carries the bumped target */}
+        {!noGym && (
+          <TaskCard {...card('gym', { subtitle: tasks.gym.workoutNotes || desc('gym') })}>
             <input
               className="input mt-3"
               disabled={disabled}
@@ -455,14 +433,18 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
               value={tasks.gym.workoutNotes || ''}
               onChange={e => update('gym', { workoutNotes: e.target.value })}
             />
-          )}
-        </TaskCard>
+          </TaskCard>
+        )}
 
         <TaskCard
           {...card('physicalActivity', {
             subtitle: pa.value ? `${pa.value.toLocaleString('en-IN')} / ${paTarget.target.toLocaleString('en-IN')} ${paTarget.unit}` : desc('physicalActivity'),
+            badge: noGym ? <Chip tone="violet">No gym</Chip> : undefined,
           })}
         >
+          {noGym && (
+            <p className="text-[13px] text-violet-200/90 pt-3">No gym today, so the Gym habit is off and these targets are higher.</p>
+          )}
           <div className="pt-3">
             <Segmented
               disabled={disabled}
@@ -487,7 +469,10 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
             />
             <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-zinc-500">{paTarget.unit}</span>
           </div>
-          <ProgressBar value={paTarget.target ? ((pa.value || 0) / paTarget.target) * 100 : 0} tone={done('physicalActivity') ? 'emerald' : 'rose'} />
+          <ProgressBar
+            value={paTarget.target ? ((pa.value || 0) / paTarget.target) * 100 : 0}
+            tone={done('physicalActivity') ? 'emerald' : 'rose'}
+          />
         </TaskCard>
 
         <TaskCard

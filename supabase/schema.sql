@@ -419,6 +419,7 @@ VALUES (
         "floorsTarget": 20,
         "travelSubstituteSteps": 15000,
         "travelSubstituteRunKm": 5.0,
+        "travelSubstituteFloors": 30,
         "familyTargetMinutes": 10,
         "calorieTarget": 2200,
         "proteinTargetG": 120,

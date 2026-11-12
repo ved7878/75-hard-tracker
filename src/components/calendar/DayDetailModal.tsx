@@ -54,9 +54,14 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({ log, config, onC
       }
     >
       <div className="space-y-3">
-        {log.travel.isTravelling && (
-          <Notice tone="amber" icon={PlaneTakeoff} title={`Travelled ${log.travel.hours} h`}>
-            Gym {log.travel.gymAvailable ? 'available' : 'unavailable – substitute used'}
+        {(log.travel.isTravelling || log.travel.gymAvailable === false) && (
+          <Notice
+            tone="amber"
+            icon={PlaneTakeoff}
+            title={log.travel.isTravelling ? `Travelled ${log.travel.hours} h` : 'No gym this day'}
+          >
+            Gym {log.travel.gymAvailable !== false ? 'available' : 'unavailable – bumped activity target'}
+            {log.travel.plannedAt ? ' · planned the day before' : ''}
           </Notice>
         )}
         {log.sickness.isSick && (

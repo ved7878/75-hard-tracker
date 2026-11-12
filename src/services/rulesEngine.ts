@@ -1,4 +1,5 @@
 import type {
+  ActivityType,
   ChallengeConfig,
   DailyLog,
   DayStatus,
@@ -27,6 +28,7 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   floorsTarget: 20,
   travelSubstituteSteps: 15000,
   travelSubstituteRunKm: 5.0,
+  travelSubstituteFloors: 30,
   familyTargetMinutes: 10,
   calorieTarget: 2200,
   proteinTargetG: 120,
@@ -121,6 +123,7 @@ export function normalizeConfig(config: Partial<ChallengeConfig>): ChallengeConf
       'floorsTarget',
       'travelSubstituteSteps',
       'travelSubstituteRunKm',
+      'travelSubstituteFloors',
       'familyTargetMinutes',
       'travelThresholdHours',
       'calorieTarget',
@@ -342,13 +345,55 @@ export function currentTimeHHMM(now: Date = new Date()): string {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
+/** Long trip (over the threshold) that would move the wake-up to the travel target */
+export function isLongTravel(travel: DailyLog['travel'], config: ChallengeConfig): boolean {
+  return Boolean(travel?.isTravelling && travel.hours > config.travelThresholdHours);
+}
+
+/**
+ * Wake-up target for a specific day. A long trip only moves it to 8:00 if it was set
+ * before the normal check-in closed (or planned the day before) – travel switched on
+ * after a missed 6:10 check-in doesn't rescue the wake-up.
+ */
+export function getLogWakeUpTarget(log: DailyLog, config: ChallengeConfig): string {
+  if (log.travel?.addedAfterWakeUp) return config.wakeUpTarget;
+  return getEffectiveWakeUpTarget(log.travel.hours, log.travel.isTravelling, config);
+}
+
+/** Normal check-in close (6:00 + 10 min -> 6:10), ignoring travel */
+export function getNormalWakeUpDeadline(config: ChallengeConfig): string {
+  return addMinutesToTime(config.wakeUpTarget, config.wakeUpGraceMinutes ?? 10);
+}
+
 /**
  * Last moment a wake-up check-in still counts: target + grace buffer
  * (6:00 + 10 min -> 6:10, or 8:10 on long travel days).
  */
 export function getWakeUpDeadline(log: DailyLog, config: ChallengeConfig): string {
-  const target = getEffectiveWakeUpTarget(log.travel.hours, log.travel.isTravelling, config);
-  return addMinutesToTime(target, config.wakeUpGraceMinutes ?? 10);
+  return addMinutesToTime(getLogWakeUpTarget(log, config), config.wakeUpGraceMinutes ?? 10);
+}
+
+/**
+ * Challenger edits to today's travel: a long trip switched on (or stretched past the
+ * threshold) after the normal check-in has closed is recorded, but flagged so it doesn't
+ * push the wake-up target back. Trips planned the night before or set before 6:10 keep it.
+ */
+export function applyLateTravelLock(
+  existing: DailyLog,
+  updated: DailyLog,
+  config: ChallengeConfig,
+  now: Date = new Date()
+): DailyLog {
+  const becameLong = isLongTravel(updated.travel, config) && !isLongTravel(existing.travel, config);
+  const isThatDay = updated.date === formatDate(now);
+  if (becameLong && isThatDay && currentTimeHHMM(now) > getNormalWakeUpDeadline(config)) {
+    return { ...updated, travel: { ...updated.travel, addedAfterWakeUp: true } };
+  }
+  // Once flagged, the flag stays for the day (toggling travel off and on can't clear it)
+  if (existing.travel?.addedAfterWakeUp && !updated.travel?.addedAfterWakeUp) {
+    return { ...updated, travel: { ...updated.travel, addedAfterWakeUp: true } };
+  }
+  return updated;
 }
 
 /**
@@ -361,31 +406,66 @@ export function isWakeUpCheckInOpen(log: DailyLog, config: ChallengeConfig, now:
 }
 
 /**
+ * No gym today (travel, sick day, gym closed…) – set on the Travel & sick days screen.
+ * Independent of trip length.
+ */
+export function isGymUnavailable(travel: DailyLog['travel']): boolean {
+  return travel?.gymAvailable === false;
+}
+
+/** Normal activity targets: 10K steps / 3 km / 20 floors */
+export function getNormalActivityTarget(type: ActivityType, config: ChallengeConfig): number {
+  return type === 'run' ? config.runTargetKm : type === 'floors' ? config.floorsTarget : config.stepsTarget;
+}
+
+/** Bumped activity targets when there's no gym: 15K steps / 5 km / 30 floors */
+export function getNoGymActivityTarget(type: ActivityType, config: ChallengeConfig): number {
+  return type === 'run'
+    ? config.travelSubstituteRunKm
+    : type === 'floors'
+    ? config.travelSubstituteFloors
+    : config.travelSubstituteSteps;
+}
+
+/** Target the Physical Activity card should aim for on this day */
+export function getActivityTarget(type: ActivityType, travel: DailyLog['travel'], config: ChallengeConfig): number {
+  return isGymUnavailable(travel) ? getNoGymActivityTarget(type, config) : getNormalActivityTarget(type, config);
+}
+
+/** "15K steps · 5 km · 30 floors" */
+export function describeNoGymTargets(config: ChallengeConfig): string {
+  return `${(config.travelSubstituteSteps / 1000).toFixed(0)}K steps · ${config.travelSubstituteRunKm} km · ${config.travelSubstituteFloors} floors`;
+}
+
+const BUMPED_MET = 'No gym – bumped activity target met';
+
+/**
  * Evaluates whether Gym is satisfied:
- * - If normal: workout completed = true.
- * - If travel > 4h AND gym unavailable: substitute with 15k steps OR 5km run.
+ * - Gym available: workout completed = true.
+ * - Gym unavailable: the day's Physical Activity must hit the bumped targets
+ *   (15K steps OR 5 km OR 30 floors) – one activity covers both habits.
  */
 export function evaluateGymCompletion(
   gym: TaskState['gym'],
   travel: DailyLog['travel'],
-  config: ChallengeConfig
+  config: ChallengeConfig,
+  physicalActivity?: TaskState['physicalActivity']
 ): { satisfied: boolean; isSubstituted: boolean; reason: string } {
-  // If travel > 4h and gym not available
-  if (travel.isTravelling && travel.hours > config.travelThresholdHours && !travel.gymAvailable) {
-    const isStepSubMet = gym.substituteType === 'steps' && (gym.substituteValue || 0) >= config.travelSubstituteSteps;
-    const isRunSubMet = gym.substituteType === 'run' && (gym.substituteValue || 0) >= config.travelSubstituteRunKm;
+  if (isGymUnavailable(travel)) {
+    const pa = physicalActivity;
+    const paMet = Boolean(pa && (pa.value || 0) >= getNoGymActivityTarget(pa.type, config));
+    // Older logs recorded the substitute on the gym card itself
+    const subType = gym.substituteType;
+    const legacyMet =
+      Boolean(subType) && (gym.substituteValue || 0) >= getNoGymActivityTarget(subType as ActivityType, config);
 
-    if (gym.completed || isStepSubMet || isRunSubMet) {
-      return {
-        satisfied: true,
-        isSubstituted: true,
-        reason: `Substituted with ${gym.substituteType === 'steps' ? `${gym.substituteValue} steps (req. ${config.travelSubstituteSteps})` : `${gym.substituteValue} km run (req. ${config.travelSubstituteRunKm} km)`}`,
-      };
-    }
+    // A plain "gym done" tick doesn't count here – the bumped target is the rule
+    if (paMet) return { satisfied: true, isSubstituted: true, reason: BUMPED_MET };
+    if (legacyMet) return { satisfied: true, isSubstituted: true, reason: 'No gym – substitute logged on the gym card' };
     return {
       satisfied: false,
       isSubstituted: true,
-      reason: `Travel substitute: ${config.travelSubstituteSteps.toLocaleString()} steps OR ${config.travelSubstituteRunKm} km run`,
+      reason: `No gym: ${describeNoGymTargets(config)}`,
     };
   }
 
@@ -428,7 +508,8 @@ export interface TaskValidationItem {
 }
 
 /**
- * Check all 11 required habits for a given day log against configured rules
+ * Check the required habits for a given day log against configured rules
+ * (11 normally, 10 on a no-gym day where Physical Activity carries the bumped target)
  */
 export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
   items: TaskValidationItem[];
@@ -438,10 +519,11 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
   failedNames: string[];
 } {
   const { tasks, travel } = log;
-  const effectiveWakeTarget = getEffectiveWakeUpTarget(travel.hours, travel.isTravelling, config);
+  const effectiveWakeTarget = getLogWakeUpTarget(log, config);
   const wakeDeadline = getWakeUpDeadline(log, config);
-  const gymEval = evaluateGymCompletion(tasks.gym, travel, config);
+  const gymEval = evaluateGymCompletion(tasks.gym, travel, config, tasks.physicalActivity);
   const paEval = evaluatePhysicalActivity(tasks.physicalActivity, config);
+  const noGym = isGymUnavailable(travel);
 
   // 1. Wake Up
   const wakeUpValid = tasks.wakeUp.completed && (
@@ -461,7 +543,11 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
   const gymValid = gymEval.satisfied;
 
   // 6. Physical Activity
-  const paValid = tasks.physicalActivity.completed || paEval.satisfied;
+  // No gym: the Gym habit is dropped for the day and activity must hit the bumped target
+  // (15K steps / 5 km / 30 floors). Older logs that recorded the substitute on the gym card
+  // still count when the normal activity target was also met.
+  const normalPaValid = tasks.physicalActivity.completed || paEval.satisfied;
+  const paValid = noGym ? gymEval.satisfied && (gymEval.reason === BUMPED_MET || normalPaValid) : normalPaValid;
 
   // 7. Diet
   const dietValid = tasks.diet.completed && tasks.diet.cleanDietChecked;
@@ -483,7 +569,7 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
       id: 'wakeUp',
       title: 'Wake Up',
       isCompleted: wakeUpValid,
-      requirementDesc: `Check in by ${formatTime12(wakeDeadline)}${travel.isTravelling && travel.hours > config.travelThresholdHours ? ' (travel)' : ''}`,
+      requirementDesc: `Check in by ${formatTime12(wakeDeadline)}${effectiveWakeTarget !== config.wakeUpTarget ? ' (travel)' : ''}`,
     },
     {
       id: 'noMasturbation',
@@ -507,15 +593,15 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
       id: 'gym',
       title: 'Gym Workout',
       isCompleted: gymValid,
-      requirementDesc: gymEval.isSubstituted
-        ? `${(config.travelSubstituteSteps / 1000).toFixed(0)}K steps or ${config.travelSubstituteRunKm} km run`
-        : 'Daily dedicated workout',
+      requirementDesc: 'Daily dedicated workout',
     },
     {
       id: 'physicalActivity',
       title: 'Physical Activity',
       isCompleted: paValid,
-      requirementDesc: `${(config.stepsTarget / 1000).toFixed(0)}K steps · ${config.runTargetKm} km · ${config.floorsTarget} floors`,
+      requirementDesc: noGym
+        ? `No gym today · ${describeNoGymTargets(config)}`
+        : `${(config.stepsTarget / 1000).toFixed(0)}K steps · ${config.runTargetKm} km · ${config.floorsTarget} floors`,
     },
     {
       id: 'diet',
@@ -548,6 +634,9 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
       requirementDesc: `${config.familyTargetMinutes} min quality time`,
     },
   ];
+
+  // No gym today: the Gym habit is removed from the day's list
+  if (noGym) items.splice(items.findIndex(i => i.id === 'gym'), 1);
 
   const completedCount = items.filter(i => i.isCompleted).length;
   const totalCount = items.length;

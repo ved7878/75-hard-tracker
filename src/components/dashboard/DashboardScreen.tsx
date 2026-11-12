@@ -3,7 +3,16 @@ import { PlaneTakeoff, Stethoscope, CalendarClock, Flame, Wallet, ShieldCheck, C
 import { useChallenge } from '../../context/ChallengeContext';
 import { DayProgressRing } from './DayProgressRing';
 import { QuickTasksList } from './QuickTasksList';
-import { validateDayTasks, formatDate, formatPrettyDate, getChallengePhase } from '../../services/rulesEngine';
+import {
+  validateDayTasks,
+  formatDate,
+  formatPrettyDate,
+  getChallengePhase,
+  getLogWakeUpTarget,
+  formatTime12,
+  isGymUnavailable,
+  describeNoGymTargets,
+} from '../../services/rulesEngine';
 import { TaskState } from '../../types';
 import { Card, Notice, SectionHeader, ProgressBar } from '../ui';
 
@@ -166,17 +175,23 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab,
           </Card>
 
           {/* Context notices */}
-          {currentLog.travel.isTravelling && (
+          {(currentLog.travel.isTravelling || isGymUnavailable(currentLog.travel)) && (
             <Notice
               tone="amber"
               icon={PlaneTakeoff}
-              title={`Travel day · ${currentLog.travel.hours} h`}
+              title={currentLog.travel.isTravelling ? `Travel day · ${currentLog.travel.hours} h` : 'No gym today'}
               onClick={() => onNavigateTab('travel')}
               action={<ChevronRight className="w-5 h-5 text-amber-300" />}
             >
-              {currentLog.travel.hours > config.travelThresholdHours
-                ? 'Later wake-up allowed. Gym can be swapped if unavailable.'
-                : `Under ${config.travelThresholdHours} h – normal rules apply.`}
+              {currentLog.travel.isTravelling &&
+                (getLogWakeUpTarget(currentLog, config) !== config.wakeUpTarget
+                  ? `Wake-up by ${formatTime12(getLogWakeUpTarget(currentLog, config))}. `
+                  : currentLog.travel.addedAfterWakeUp
+                  ? 'Added after check-in closed – normal wake-up. '
+                  : 'Normal wake-up. ')}
+              {isGymUnavailable(currentLog.travel)
+                ? `No gym: activity is ${describeNoGymTargets(config)}.`
+                : 'Gym as usual.'}
             </Notice>
           )}
           {currentLog.sickness.isSick && !currentLog.sickness.isExempt && (

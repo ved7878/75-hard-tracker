@@ -10,12 +10,123 @@ import {
   Lock,
   Loader2,
   Info,
+  CalendarClock,
+  Dumbbell,
+  AlarmClock,
+  Footprints,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
-import { formatDate, formatPrettyDate, formatTime12 } from '../../services/rulesEngine';
+import {
+  describeNoGymTargets,
+  formatDate,
+  formatPrettyDate,
+  formatTime12,
+  getEffectiveWakeUpTarget,
+  getWakeUpDeadline,
+  getNormalWakeUpDeadline,
+} from '../../services/rulesEngine';
 import { supabaseService } from '../../services/supabaseService';
 import { compressImage } from '../../services/imageCompression';
-import { Card, Notice, ScreenTitle, Segmented, Switch } from '../ui';
+import { Card, Notice, ScreenTitle, Switch } from '../ui';
+import type { ChallengeConfig, TravelInfo } from '../../types';
+
+/** Trip length slider + wake-up rule + destination, shared by today and tomorrow */
+const TripFields: React.FC<{
+  travel: TravelInfo;
+  disabled: boolean;
+  config: ChallengeConfig;
+  onChange: (patch: Partial<TravelInfo>) => void;
+  when?: 'today' | 'tomorrow';
+}> = ({ travel, disabled, config, onChange, when = 'today' }) => {
+  const isLong = travel.hours > config.travelThresholdHours;
+  const lockedOut = when === 'today' && travel.addedAfterWakeUp;
+  return (
+    <div className="space-y-4 pt-4 border-t border-white/[0.05]">
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-zinc-400">Travel time</span>
+          <span className="text-[15px] font-semibold text-amber-300 tabular">{travel.hours} hours</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="18"
+          step="0.5"
+          aria-label={`Travel hours ${when}`}
+          disabled={disabled}
+          value={travel.hours}
+          onChange={e => onChange({ hours: parseFloat(e.target.value) })}
+          className="w-full h-2 accent-amber-500 disabled:opacity-50"
+        />
+        <div className="flex justify-between text-[12px] text-zinc-600 mt-1">
+          <span>1 h</span>
+          <span>{config.travelThresholdHours} h threshold</span>
+          <span>18 h</span>
+        </div>
+      </div>
+
+      <div className={`rounded-xl px-3.5 py-3 text-[13px] leading-relaxed ${isLong ? 'bg-amber-500/10 text-amber-200' : 'bg-white/[0.04] text-zinc-400'}`}>
+        {isLong && lockedOut ? (
+          <>
+            Turned on after the {formatTime12(getNormalWakeUpDeadline(config))} check-in closed, so today's wake-up stays{' '}
+            <b>{formatTime12(config.wakeUpTarget)}</b>. Plan trips the night before in Tomorrow's plan.
+          </>
+        ) : isLong ? (
+          <>
+            Over {config.travelThresholdHours} h: wake up by <b>{formatTime12(config.wakeUpTravelTarget)}</b> {when} instead of{' '}
+            {formatTime12(config.wakeUpTarget)}.
+          </>
+        ) : (
+          <>
+            {config.travelThresholdHours} h or less: normal wake-up ({formatTime12(config.wakeUpTarget)}).
+            {when === 'today' && ` A long trip only moves today's wake-up if set before ${formatTime12(getNormalWakeUpDeadline(config))}.`}
+          </>
+        )}
+      </div>
+
+      <input
+        className="input"
+        disabled={disabled}
+        placeholder="Where are you going? (optional)"
+        value={travel.destination || ''}
+        onChange={e => onChange({ destination: e.target.value })}
+      />
+    </div>
+  );
+};
+
+/** Gym access switch. No gym bumps the activity targets, which then cover the gym habit. */
+const GymAccessCard: React.FC<{
+  title: string;
+  gymAvailable: boolean;
+  disabled: boolean;
+  config: ChallengeConfig;
+  onChange: (available: boolean) => void;
+}> = ({ title, gymAvailable, disabled, config, onChange }) => (
+  <Card className="space-y-4">
+    <div className="flex items-center gap-3">
+      <span
+        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+          gymAvailable ? 'bg-white/[0.05] text-zinc-400' : 'bg-violet-500/15 text-violet-400'
+        }`}
+      >
+        <Dumbbell className="w-5 h-5" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <h3 className="text-[15px] font-semibold text-white">{title}</h3>
+        <p className="text-[13px] text-zinc-500">Travelling, sick or gym closed? Turn this off</p>
+      </div>
+      <Switch tone="emerald" label={title} disabled={disabled} checked={gymAvailable} onChange={onChange} />
+    </div>
+    {!gymAvailable && (
+      <div className="rounded-xl bg-violet-500/10 px-3.5 py-3 text-[13px] leading-relaxed text-violet-100">
+        No gym: Physical Activity goes up to <b>{(config.travelSubstituteSteps / 1000).toFixed(0)}K steps</b>,{' '}
+        <b>{config.travelSubstituteRunKm} km</b> or <b>{config.travelSubstituteFloors} floors</b>, and the Gym habit is
+        removed from the checklist for the day.
+      </div>
+    )}
+  </Card>
+);
 
 export const TravelSicknessScreen: React.FC = () => {
   const {
@@ -30,13 +141,23 @@ export const TravelSicknessScreen: React.FC = () => {
     isAdmin,
     approveException,
     rejectException,
+    tomorrowLog,
+    updateTomorrowTravel,
   } = useChallenge();
 
   const proofInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const { travel, sickness } = currentLog;
-  const isLongTravel = travel.isTravelling && travel.hours > config.travelThresholdHours;
   const disabled = !isEditable;
+
+  const tomorrow = tomorrowLog.travel;
+  const tomorrowWake = getEffectiveWakeUpTarget(tomorrow.hours, tomorrow.isTravelling, config);
+  const tomorrowDeadline = getWakeUpDeadline(tomorrowLog, config);
+  // Planned from today's view, for a challenger (not the referee's own account)
+  const canPlanTomorrow = isToday && Boolean(currentUser) && currentUser?.id !== 'admin';
+
+  const updateTravel = (patch: Partial<TravelInfo>) =>
+    updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, ...patch } }));
 
   const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
@@ -124,7 +245,7 @@ export const TravelSicknessScreen: React.FC = () => {
         </Notice>
       )}
 
-      {/* Travel */}
+      {/* Travel today */}
       <Card className="space-y-4">
         <div className="flex items-center gap-3">
           <span
@@ -135,97 +256,108 @@ export const TravelSicknessScreen: React.FC = () => {
             <PlaneTakeoff className="w-5 h-5" />
           </span>
           <div className="flex-1 min-w-0">
-            <h3 className="text-[15px] font-semibold text-white">Travelling today</h3>
-            <p className="text-[13px] text-zinc-500">Long trips adjust wake-up and gym</p>
+            <h3 className="text-[15px] font-semibold text-white">{isToday ? 'Travelling today' : 'Travelling this day'}</h3>
+            <p className="text-[13px] text-zinc-500">
+              {travel.addedAfterWakeUp && travel.isTravelling
+                ? "Added after check-in closed · wake-up unchanged"
+                : travel.plannedAt && travel.isTravelling
+                ? 'Planned the day before'
+                : `Long trips push back the wake-up (set by ${formatTime12(getNormalWakeUpDeadline(config))})`}
+            </p>
           </div>
           <Switch
             tone="amber"
             label="Travelling today"
             disabled={disabled}
             checked={travel.isTravelling}
-            onChange={checked =>
-              updateCurrentLog(prev => ({
-                ...prev,
-                travel: { ...prev.travel, isTravelling: checked, hours: checked ? Math.max(prev.travel.hours, 2) : 0, gymAvailable: checked ? prev.travel.gymAvailable : true },
-              }))
-            }
+            onChange={checked => updateTravel({ isTravelling: checked, hours: checked ? Math.max(travel.hours, 2) : 0 })}
           />
         </div>
 
         {travel.isTravelling && (
-          <div className="space-y-4 pt-4 border-t border-white/[0.05]">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-zinc-400">Travel time</span>
-                <span className="text-[15px] font-semibold text-amber-300 tabular">{travel.hours} hours</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="18"
-                step="0.5"
-                disabled={disabled}
-                value={travel.hours}
-                onChange={e => {
-                  const hours = parseFloat(e.target.value);
-                  updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, hours } }));
-                }}
-                className="w-full h-2 accent-amber-500 disabled:opacity-50"
-              />
-              <div className="flex justify-between text-[12px] text-zinc-600 mt-1">
-                <span>1 h</span>
-                <span>{config.travelThresholdHours} h threshold</span>
-                <span>18 h</span>
-              </div>
-            </div>
-
-            <div className={`rounded-xl px-3.5 py-3 text-[13px] leading-relaxed ${isLongTravel ? 'bg-amber-500/10 text-amber-200' : 'bg-white/[0.04] text-zinc-400'}`}>
-              {isLongTravel ? (
-                <>
-                  Over {config.travelThresholdHours} h: wake up by <b>{formatTime12(config.wakeUpTravelTarget)}</b> instead of{' '}
-                  {formatTime12(config.wakeUpTarget)}.
-                </>
-              ) : (
-                <>
-                  {config.travelThresholdHours} h or less: normal rules apply (wake up by {formatTime12(config.wakeUpTarget)}).
-                </>
-              )}
-            </div>
-
-            {isLongTravel && (
-              <div>
-                <p className="text-sm text-zinc-400 mb-2">Gym available where you are?</p>
-                <Segmented
-                  disabled={disabled}
-                  value={travel.gymAvailable ? 'yes' : 'no'}
-                  onChange={v => updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, gymAvailable: v === 'yes' } }))}
-                  options={[
-                    { value: 'yes', label: 'Yes' },
-                    { value: 'no', label: 'No' },
-                  ]}
-                />
-                {!travel.gymAvailable && (
-                  <p className="text-[13px] text-amber-200/80 mt-2">
-                    Swap the gym for {config.travelSubstituteSteps.toLocaleString('en-IN')} steps or a {config.travelSubstituteRunKm} km
-                    run. Log it in the checklist.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <input
-              className="input"
-              disabled={disabled}
-              placeholder="Where are you going? (optional)"
-              value={travel.destination || ''}
-              onChange={e => {
-                const destination = e.target.value;
-                updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, destination } }));
-              }}
-            />
-          </div>
+          <TripFields travel={travel} disabled={disabled} config={config} onChange={updateTravel} />
         )}
       </Card>
+
+      {/* Gym access today */}
+      <GymAccessCard
+        title={isToday ? 'Gym available today' : 'Gym available this day'}
+        gymAvailable={travel.gymAvailable !== false}
+        disabled={disabled}
+        config={config}
+        onChange={gymAvailable => updateTravel({ gymAvailable })}
+      />
+
+      {/* Tomorrow's plan: set the night before so tomorrow's wake-up target is right */}
+      {canPlanTomorrow && (
+        <Card className="space-y-4">
+          <div className="flex items-center gap-3">
+            <span
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                tomorrow.isTravelling || tomorrow.gymAvailable === false
+                  ? 'bg-violet-500/15 text-violet-400'
+                  : 'bg-white/[0.05] text-zinc-400'
+              }`}
+            >
+              <CalendarClock className="w-5 h-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[15px] font-semibold text-white">Tomorrow's plan</h3>
+              <p className="text-[13px] text-zinc-500">{formatPrettyDate(tomorrowLog.date)} · set it before you sleep</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-4 border-t border-white/[0.05]">
+            <PlaneTakeoff className={`w-5 h-5 shrink-0 ${tomorrow.isTravelling ? 'text-amber-400' : 'text-zinc-500'}`} />
+            <span className="flex-1 text-sm text-zinc-200">Travelling tomorrow</span>
+            <Switch
+              tone="amber"
+              label="Travelling tomorrow"
+              checked={tomorrow.isTravelling}
+              onChange={checked =>
+                updateTomorrowTravel({ isTravelling: checked, hours: checked ? Math.max(tomorrow.hours, 2) : 0 })
+              }
+            />
+          </div>
+
+          {tomorrow.isTravelling && (
+            <TripFields travel={tomorrow} disabled={false} config={config} onChange={updateTomorrowTravel} when="tomorrow" />
+          )}
+
+          <div className="flex items-center gap-3">
+            <Dumbbell className={`w-5 h-5 shrink-0 ${tomorrow.gymAvailable === false ? 'text-violet-400' : 'text-zinc-500'}`} />
+            <span className="flex-1 text-sm text-zinc-200">Gym available tomorrow</span>
+            <Switch
+              tone="emerald"
+              label="Gym available tomorrow"
+              checked={tomorrow.gymAvailable !== false}
+              onChange={gymAvailable => updateTomorrowTravel({ gymAvailable })}
+            />
+          </div>
+
+          <div className="rounded-xl bg-white/[0.04] px-3.5 py-3 space-y-2 text-[13px]">
+            <div className="flex items-start justify-between gap-3">
+              <span className="flex items-center gap-2 text-zinc-400 shrink-0">
+                <AlarmClock className="w-4 h-4" /> Wake-up
+              </span>
+              <span className={`font-semibold text-right tabular ${tomorrowWake !== config.wakeUpTarget ? 'text-amber-300' : 'text-white'}`}>
+                {formatTime12(tomorrowWake)}{' '}
+                <span className="font-normal text-zinc-500">· check in by {formatTime12(tomorrowDeadline)}</span>
+              </span>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <span className="flex items-center gap-2 text-zinc-400 shrink-0">
+                <Footprints className="w-4 h-4" /> Activity
+              </span>
+              <span className={`font-semibold text-right ${tomorrow.gymAvailable === false ? 'text-violet-300' : 'text-white'}`}>
+                {tomorrow.gymAvailable === false
+                  ? `No gym · ${describeNoGymTargets(config)}`
+                  : `Gym + ${(config.stepsTarget / 1000).toFixed(0)}K steps · ${config.runTargetKm} km · ${config.floorsTarget} floors`}
+              </span>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Sickness */}
       <Card className="space-y-4">

@@ -1,5 +1,12 @@
 import type { ChallengeConfig, DailyLog, TaskState } from '../types';
-import { getEffectiveWakeUpTarget, getWakeUpDeadline, validateDayTasks } from './rulesEngine';
+import {
+  getActivityTarget,
+  getLogWakeUpTarget,
+  getNoGymActivityTarget,
+  getWakeUpDeadline,
+  isGymUnavailable,
+  validateDayTasks,
+} from './rulesEngine';
 
 export function isLateWakeUp(log: DailyLog, config: ChallengeConfig): boolean {
   return Boolean(log.tasks.wakeUp.actualTime && log.tasks.wakeUp.actualTime > getWakeUpDeadline(log, config));
@@ -16,7 +23,7 @@ export function toggleTask(log: DailyLog, taskId: keyof TaskState, config: Chall
 
   switch (taskId) {
     case 'wakeUp': {
-      const target = getEffectiveWakeUpTarget(log.travel.hours, log.travel.isTravelling, config);
+      const target = getLogWakeUpTarget(log, config);
       // A logged late wake-up can't be "ticked away" – the time has to be corrected instead
       if (next && isLateWakeUp(log, config)) return log;
       tasks.wakeUp = {
@@ -35,25 +42,21 @@ export function toggleTask(log: DailyLog, taskId: keyof TaskState, config: Chall
       break;
     case 'physicalActivity': {
       const pa = tasks.physicalActivity;
-      const target = pa.type === 'run' ? config.runTargetKm : pa.type === 'floors' ? config.floorsTarget : config.stepsTarget;
+      // No-gym days fill in the bumped target so the gym habit is covered too
+      const target = getActivityTarget(pa.type, log.travel, config);
       tasks.physicalActivity = { ...pa, completed: next, value: next ? Math.max(pa.value || 0, target) : 0 };
       break;
     }
     case 'gym': {
-      const t = log.travel;
-      const substituteMode = t.isTravelling && t.hours > config.travelThresholdHours && !t.gymAvailable;
-      if (substituteMode) {
-        // Travel day with no gym: the tick means "I did the substitute" – record the
-        // required steps / km so the 15K steps / 5 km rule is actually reflected.
-        const type = tasks.gym.substituteType || 'steps';
-        const target = type === 'run' ? config.travelSubstituteRunKm : config.travelSubstituteSteps;
-        tasks.gym = {
-          ...tasks.gym,
-          completed: next,
-          isSubstituted: true,
-          substituteType: type,
-          substituteValue: next ? Math.max(tasks.gym.substituteValue || 0, target) : 0,
-        };
+      if (isGymUnavailable(log.travel)) {
+        // No gym today: the tick means "I hit the bumped activity target" – record it on
+        // Physical Activity (15K steps / 5 km / 30 floors), which then covers both habits.
+        const pa = tasks.physicalActivity;
+        const bumped = getNoGymActivityTarget(pa.type, config);
+        tasks.physicalActivity = next
+          ? { ...pa, completed: true, value: Math.max(pa.value || 0, bumped) }
+          : { ...pa, completed: false, value: 0 };
+        tasks.gym = { ...tasks.gym, completed: false, isSubstituted: true, substituteValue: 0 };
       } else {
         tasks.gym = {
           ...tasks.gym,

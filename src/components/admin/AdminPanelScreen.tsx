@@ -444,7 +444,9 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                   value={form.travelSubstituteRunKm}
                   onChange={n => patchForm({ travelSubstituteRunKm: n })}
                 />
+                <NumberField label="Gym swap: floors" value={form.travelSubstituteFloors} onChange={n => patchForm({ travelSubstituteFloors: n })} />
               </div>
+              <p className="text-[12px] text-zinc-500">On a no-gym day (travel, sick, gym closed) Physical Activity must hit these instead.</p>
             </Card>
           </section>
 

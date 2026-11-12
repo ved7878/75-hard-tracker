@@ -25,6 +25,7 @@ export const DEFAULT_CONFIG = {
   floorsTarget: 20,
   travelSubstituteSteps: 15000,
   travelSubstituteRunKm: 5.0,
+  travelSubstituteFloors: 30,
   familyTargetMinutes: 10,
   reminderTime: '21:00',
   reminderEnabled: true,

@@ -46,6 +46,7 @@ export interface ChallengeConfig {
   floorsTarget: number; // 20
   travelSubstituteSteps: number; // 15000
   travelSubstituteRunKm: number; // 5.0
+  travelSubstituteFloors: number; // 30 – no-gym days: activity must hit these bumped targets
   familyTargetMinutes: number; // 10
   calorieTarget: number; // daily kcal goal (tracking only, not required to pass the day)
   proteinTargetG: number; // daily protein goal in grams
@@ -70,9 +71,14 @@ export interface ChallengeConfig {
 export interface TravelInfo {
   isTravelling: boolean;
   hours: number;
+  /** Gym access for the day (travel, sick day, gym closed...). false = activity targets are bumped */
   gymAvailable: boolean;
   destination?: string;
   notes?: string;
+  /** Set when the trip was planned the day before (from "Tomorrow's plan") */
+  plannedAt?: string;
+  /** Long trip switched on after the normal wake-up check-in closed – it doesn't move the wake-up target */
+  addedAfterWakeUp?: boolean;
 }
 
 export interface SicknessInfo {
@@ -108,8 +114,8 @@ export interface TaskState {
   };
   gym: {
     completed: boolean;
-    isSubstituted?: boolean; // if gym was unavailable on travel > 4h
-    substituteType?: 'steps' | 'run';
+    isSubstituted?: boolean; // gym unavailable that day
+    substituteType?: 'steps' | 'run' | 'floors'; // legacy: substitute logged on the gym card
     substituteValue?: number;
     workoutNotes?: string;
   };
