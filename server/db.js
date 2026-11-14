@@ -27,7 +27,7 @@ export const DEFAULT_CONFIG = {
   travelSubstituteRunKm: 5.0,
   travelSubstituteFloors: 30,
   familyTargetMinutes: 10,
-  reminderTime: '21:00',
+  reminderTime: '22:00',
   reminderEnabled: true,
   strictResetOnMiss: true,
   lockPastDays: true,

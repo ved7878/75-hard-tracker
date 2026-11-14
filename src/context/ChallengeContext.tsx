@@ -29,7 +29,8 @@ import {
 } from '../services/rulesEngine';
 import { supabaseService } from '../services/supabaseService';
 import { feedback } from '../services/feedback';
-import { setupDailyReminder, getReminderPrefs } from '../services/notifications';
+import { setupReminders, getReminderPrefs, setReminderProgress } from '../services/notifications';
+import { useNow } from '../hooks/useNow';
 
 interface ChallengeContextType {
   config: ChallengeConfig;
@@ -326,11 +327,38 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     initAuth();
   }, [reloadData]);
 
-  // 9 PM reminder
+  // Midday progress push (2:30 PM) + bedtime reminder (10 PM)
   useEffect(() => {
-    const prefs = getReminderPrefs({ enabled: config.reminderEnabled, time: config.reminderTime });
-    setupDailyReminder(prefs.time, prefs.enabled);
+    setupReminders(getReminderPrefs({ enabled: config.reminderEnabled, time: config.reminderTime }));
   }, [config.reminderTime, config.reminderEnabled]);
+
+  // Re-check every 10 min too: the wake-up check-in closes with time, not with an edit
+  const reminderClock = useNow(10 * 60_000);
+  // Keep the reminder text in step with today's real progress ("6/11 done – 5 to go")
+  useEffect(() => {
+    const me = signedInUserRef.current;
+    if (!me || me.role === 'admin') {
+      setReminderProgress(null);
+      return;
+    }
+    const log = allUsersLogs[me.id]?.[todayStr] || createDefaultLog(todayStr, config, me.id);
+    const v = validateDayTasks(log, config);
+    const dayNumber = getDayNumber(todayStr, config.startDate);
+    // A missed wake-up check-in can't be logged any more – don't nudge for it
+    const wakeUpClosed = !isWakeUpCheckInOpen(log, config);
+    const pending = v.items
+      .filter(i => i.required !== false && !i.isCompleted && !(i.id === 'wakeUp' && wakeUpClosed))
+      .map(i => i.title);
+    setReminderProgress({
+      date: todayStr,
+      dayNumber,
+      active: dayNumber >= 1 && dayNumber <= config.durationDays,
+      done: v.completedCount,
+      total: v.totalCount,
+      allDone: v.allCompleted,
+      pending,
+    });
+  }, [allUsersLogs, todayStr, config, currentUser, reminderClock]);
 
   // Unified login for challengers and the referee. In cloud mode the database checks the
   // password / PIN (they never reach the browser); there are no built-in admin credentials.

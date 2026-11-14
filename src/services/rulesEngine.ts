@@ -49,7 +49,7 @@ export const DEFAULT_CONFIG: ChallengeConfig = {
   familyTargetMinutes: 10,
   calorieTarget: 2200,
   proteinTargetG: 120,
-  reminderTime: '21:00',
+  reminderTime: '22:00',
   reminderEnabled: true,
   strictResetOnMiss: true,
   lockPastDays: true,

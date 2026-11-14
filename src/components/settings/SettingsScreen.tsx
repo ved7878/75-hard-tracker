@@ -10,6 +10,7 @@ import {
   BellRing,
   CalendarRange,
   Vibrate,
+  Sun,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
@@ -18,6 +19,7 @@ import {
   getReminderPrefs,
   saveReminderPrefs,
   notificationPermission,
+  previewReminder,
 } from '../../services/notifications';
 import { sound } from '../../services/audio';
 import { haptics } from '../../services/haptics';
@@ -43,8 +45,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
   const isRefereeSelf = isAdmin && currentUser?.id === 'admin';
   const me = squadMembers.find(m => m.user.id === currentUser?.id);
 
+  const blocked = notificationPermission() !== 'granted';
+
   const updateReminder = async (next: typeof reminder) => {
-    if (next.enabled && !reminder.enabled) {
+    const turningOn = (next.enabled && !reminder.enabled) || (next.middayEnabled && !reminder.middayEnabled);
+    if (turningOn) {
       const granted = await requestNotificationPermission();
       if (!granted) {
         alert('Notifications are blocked. Allow them in your browser settings to get the reminder.');
@@ -61,10 +66,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
       alert('Notifications are blocked. Allow them for this app in your phone / browser settings, then try again.');
       return;
     }
-    const shown = await sendLocalNotification('75 HARD reminder', {
-      body: 'This is how your daily reminder will look.',
-      tag: '75hard-test',
-    });
+    // Show both reminders exactly as they would read right now
+    const midday = previewReminder('midday');
+    const bedtime = previewReminder('evening');
+    const shown = await sendLocalNotification(midday.title, { body: midday.body, tag: '75hard-test-midday' });
+    if (shown) setTimeout(() => sendLocalNotification(bedtime.title, { body: bedtime.body, tag: '75hard-test-bedtime' }), 1500);
     if (!shown) alert('Could not show a notification on this device. Try reopening the app and test again.');
   };
 
@@ -155,17 +161,48 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
         <SectionHeader title="Notifications & sound" />
         <ListGroup>
           <ListRow
-            icon={Bell}
-            iconTone="rose"
-            title="Daily reminder"
+            icon={Sun}
+            iconTone="amber"
+            title="Midday progress push"
             subtitle={
-              reminder.enabled && notificationPermission() !== 'granted'
+              reminder.middayEnabled && blocked
                 ? 'Blocked – allow notifications in your browser'
-                : reminder.enabled
-                ? `Every day at ${formatTime12(reminder.time)}`
+                : reminder.middayEnabled
+                ? `${formatTime12(reminder.middayTime)} · how much is done, what's left`
                 : 'Off'
             }
-            right={<Switch checked={reminder.enabled} onChange={v => updateReminder({ ...reminder, enabled: v })} label="Daily reminder" />}
+            right={
+              <Switch
+                checked={reminder.middayEnabled}
+                tone="amber"
+                onChange={v => updateReminder({ ...reminder, middayEnabled: v })}
+                label="Midday progress push"
+              />
+            }
+          />
+          {reminder.middayEnabled && (
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-[15px] text-zinc-300 pl-12">Time</span>
+              <input
+                type="time"
+                value={reminder.middayTime}
+                onChange={e => e.target.value && updateReminder({ ...reminder, middayTime: e.target.value })}
+                className="input w-36 text-center"
+              />
+            </div>
+          )}
+          <ListRow
+            icon={Bell}
+            iconTone="rose"
+            title="Bedtime reminder"
+            subtitle={
+              reminder.enabled && blocked
+                ? 'Blocked – allow notifications in your browser'
+                : reminder.enabled
+                ? `${formatTime12(reminder.time)} · log everything before you sleep`
+                : 'Off'
+            }
+            right={<Switch checked={reminder.enabled} onChange={v => updateReminder({ ...reminder, enabled: v })} label="Bedtime reminder" />}
           />
           {reminder.enabled && (
             <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -173,7 +210,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
               <input
                 type="time"
                 value={reminder.time}
-                onChange={e => updateReminder({ ...reminder, time: e.target.value })}
+                onChange={e => e.target.value && updateReminder({ ...reminder, time: e.target.value })}
                 className="input w-36 text-center"
               />
             </div>
@@ -201,7 +238,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
             icon={Vibrate}
             iconTone="violet"
             title="Haptics"
-            subtitle={hapticsSupported ? 'Vibrate when you tick a habit' : 'Not supported on this device'}
+            subtitle={hapticsSupported ? 'Vibrate on every tap, tick and day complete' : 'Not supported on this device'}
             right={
               <Switch
                 checked={hapticsEnabled && hapticsSupported}

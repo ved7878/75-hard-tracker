@@ -31,7 +31,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
           const Icon = item.icon;
           const active = activeTab === item.id || (item.id === 'settings' && MORE_TABS.includes(activeTab));
           return (
-            <button
+            <button data-haptic="selection"
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className="relative flex flex-col items-center justify-center gap-1 active:scale-95 transition"

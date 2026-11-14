@@ -136,6 +136,7 @@ export const Switch: React.FC<{
     <button
       type="button"
       role="switch"
+      data-haptic="medium"
       aria-checked={checked}
       aria-label={label}
       disabled={disabled}
@@ -195,6 +196,7 @@ export const Stepper: React.FC<{
       type="button"
       disabled={disabled}
       onClick={onDec}
+      data-haptic="selection"
       aria-label="Decrease"
       className="w-11 h-full flex items-center justify-center text-zinc-300 active:bg-white/[0.06] rounded-l-xl disabled:opacity-40"
     >
@@ -205,6 +207,7 @@ export const Stepper: React.FC<{
       type="button"
       disabled={disabled}
       onClick={onInc}
+      data-haptic="selection"
       aria-label="Increase"
       className="w-11 h-full flex items-center justify-center text-rose-300 active:bg-white/[0.06] rounded-r-xl disabled:opacity-40"
     >
@@ -234,6 +237,7 @@ export function Segmented<T extends string>({
           type="button"
           disabled={disabled}
           onClick={() => onChange(o.value)}
+          data-haptic="selection"
           className={cx(
             'flex-1 h-9 px-2 rounded-lg text-[13px] font-semibold transition whitespace-nowrap disabled:opacity-50',
             value === o.value ? 'bg-white/[0.1] text-white shadow-sm' : 'text-zinc-400'

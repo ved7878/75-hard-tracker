@@ -57,7 +57,7 @@ export interface ChallengeConfig {
   familyTargetMinutes: number; // 10
   calorieTarget: number; // daily kcal goal (tracking only, not required to pass the day)
   proteinTargetG: number; // daily protein goal in grams
-  reminderTime: string; // '21:00'
+  reminderTime: string; // '22:00'
   reminderEnabled: boolean;
   strictResetOnMiss: boolean; // true - reset streak count to 0 if any task missed
   lockPastDays: boolean; // true - only today is editable for standard users
