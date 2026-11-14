@@ -33,18 +33,18 @@ import { toggleTask, isLateWakeUp } from '../../services/taskActions';
 import { TaskState, ActivityType } from '../../types';
 import { supabaseService } from '../../services/supabaseService';
 import { compressImage } from '../../services/imageCompression';
-import { TASK_ICONS } from '../common/taskMeta';
+import { TASK_ICONS, getTaskIcon } from '../common/taskMeta';
 import { Card, CheckButton, Chip, Notice, ProgressBar, SectionHeader, Segmented, Stepper } from '../ui';
 
 interface DailyTrackerScreenProps {
-  focusTaskId?: keyof TaskState;
+  focusTaskId?: string;
   onNavigateTab: (tab: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
 
 const TaskCard: React.FC<{
-  id: keyof TaskState;
+  id: string;
   title: string;
   subtitle: React.ReactNode;
   done: boolean;
@@ -54,8 +54,9 @@ const TaskCard: React.FC<{
   onExpand?: () => void;
   badge?: React.ReactNode;
   children?: React.ReactNode;
-}> = ({ id, title, subtitle, done, onToggle, disabled, expanded, onExpand, badge, children }) => {
-  const Icon = TASK_ICONS[id];
+  icon?: React.ElementType;
+}> = ({ id, title, subtitle, done, onToggle, disabled, expanded, onExpand, badge, children, icon: CustomIcon }) => {
+  const Icon = CustomIcon || getTaskIcon(id);
   const hasBody = Boolean(children);
   return (
     <div
@@ -134,9 +135,9 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
   const wakeDeadline = getWakeUpDeadline(currentLog, config);
   const wakeWindowOpen = isWakeUpCheckInOpen(currentLog, config, now);
   const { items, completedCount, totalCount, allCompleted } = validateDayTasks(currentLog, config);
-  const done = (id: keyof TaskState) => items.find(i => i.id === id)?.isCompleted ?? false;
-  const desc = (id: keyof TaskState) => items.find(i => i.id === id)?.requirementDesc ?? '';
-  const title = (id: keyof TaskState) => items.find(i => i.id === id)?.title ?? '';
+  const done = (id: string) => items.find(i => i.id === id)?.isCompleted ?? false;
+  const desc = (id: string) => items.find(i => i.id === id)?.requirementDesc ?? '';
+  const title = (id: string) => items.find(i => i.id === id)?.title ?? '';
   const phase = getChallengePhase(currentDate, config);
   // No gym today (set on Travel & sick days): activity targets are bumped and cover the gym habit
   const noGym = isGymUnavailable(travel);
@@ -169,7 +170,7 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
     updateCurrentLog(prev => ({ ...prev, tasks: { ...prev.tasks, [key]: { ...prev.tasks[key], ...data } } }));
   };
 
-  const onToggle = (id: keyof TaskState) => {
+  const onToggle = (id: string) => {
     if (id === 'progressPhoto' && !tasks.progressPhoto.photoUrl) {
       fileInputRef.current?.click();
       return;
@@ -217,7 +218,12 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
   const pa = tasks.physicalActivity;
   const paTarget = activityTargets[pa.type] || activityTargets.steps;
 
-  const card = (id: keyof TaskState, extra: Partial<React.ComponentProps<typeof TaskCard>> = {}) => ({
+  const isHabitEnabled = (id: string) => {
+    const h = config.habits?.find(x => x.id === id);
+    return h ? h.enabled !== false : true;
+  };
+
+  const card = (id: string, extra: Partial<React.ComponentProps<typeof TaskCard>> = {}) => ({
     id,
     title: title(id),
     subtitle: desc(id),
@@ -332,99 +338,103 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
       <section className="space-y-2.5">
         <SectionHeader title="Daily habits" className="mb-0" />
 
-        <TaskCard
-          {...card('wakeUp', {
-            subtitle: tasks.wakeUp.actualTime
-              ? tasks.wakeUp.actualTime > wakeDeadline
-                ? `Up at ${formatTime12(tasks.wakeUp.actualTime)} · late`
-                : `Checked in at ${formatTime12(tasks.wakeUp.actualTime)}`
-              : !isAdmin && !wakeWindowOpen && !done('wakeUp')
-              ? `Missed · check-in closed at ${formatTime12(wakeDeadline)}`
-              : desc('wakeUp'),
-            disabled: disabled || (!isAdmin && !wakeWindowOpen),
-          })}
-        >
-          {isAdmin ? (
-            <>
-              <Row label="Wake-up time (admin)">
-                <input
-                  type="time"
-                  disabled={disabled}
-                  value={tasks.wakeUp.actualTime || ''}
-                  onChange={e => {
-                    const val = e.target.value;
-                    update('wakeUp', { actualTime: val, completed: Boolean(val && val <= wakeDeadline) });
-                  }}
-                  className="input w-36 text-center"
-                />
-              </Row>
-              <p className="text-[13px] text-zinc-500">
-                Counts up to {formatTime12(wakeDeadline)} ({formatTime12(wakeTarget)} + {config.wakeUpGraceMinutes} min buffer).
+        {isHabitEnabled('wakeUp') && (
+          <TaskCard
+            {...card('wakeUp', {
+              subtitle: tasks.wakeUp.actualTime
+                ? tasks.wakeUp.actualTime > wakeDeadline
+                  ? `Up at ${formatTime12(tasks.wakeUp.actualTime)} · late`
+                  : `Checked in at ${formatTime12(tasks.wakeUp.actualTime)}`
+                : !isAdmin && !wakeWindowOpen && !done('wakeUp')
+                ? `Missed · check-in closed at ${formatTime12(wakeDeadline)}`
+                : desc('wakeUp'),
+              disabled: disabled || (!isAdmin && !wakeWindowOpen),
+            })}
+          >
+            {isAdmin ? (
+              <>
+                <Row label="Wake-up time (admin)">
+                  <input
+                    type="time"
+                    disabled={disabled}
+                    value={tasks.wakeUp.actualTime || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      update('wakeUp', { actualTime: val, completed: Boolean(val && val <= wakeDeadline) });
+                    }}
+                    className="input w-36 text-center"
+                  />
+                </Row>
+                <p className="text-[13px] text-zinc-500">
+                  Counts up to {formatTime12(wakeDeadline)} ({formatTime12(wakeTarget)} + {config.wakeUpGraceMinutes} min buffer).
+                </p>
+              </>
+            ) : done('wakeUp') ? (
+              <p className="text-sm text-emerald-400 pt-3">
+                Checked in at {formatTime12(tasks.wakeUp.actualTime || '')}.
+                {wakeWindowOpen && <span className="text-zinc-500"> You can undo until {formatTime12(wakeDeadline)}.</span>}
               </p>
-            </>
-          ) : done('wakeUp') ? (
-            <p className="text-sm text-emerald-400 pt-3">
-              Checked in at {formatTime12(tasks.wakeUp.actualTime || '')}.
-              {wakeWindowOpen && <span className="text-zinc-500"> You can undo until {formatTime12(wakeDeadline)}.</span>}
-            </p>
-          ) : wakeWindowOpen ? (
-            <div className="pt-3 space-y-2">
-              <button type="button" onClick={() => onToggle('wakeUp')} className="btn-primary w-full">
-                I'm up – check in now
-              </button>
-              <p className="text-[13px] text-zinc-500 text-center">
-                Target {formatTime12(wakeTarget)} · counts until {formatTime12(wakeDeadline)}
+            ) : wakeWindowOpen ? (
+              <div className="pt-3 space-y-2">
+                <button type="button" onClick={() => onToggle('wakeUp')} className="btn-primary w-full">
+                  I'm up – check in now
+                </button>
+                <p className="text-[13px] text-zinc-500 text-center">
+                  Target {formatTime12(wakeTarget)} · counts until {formatTime12(wakeDeadline)}
+                </p>
+              </div>
+            ) : (
+              <p className="text-[13px] text-rose-300 pt-3 leading-relaxed">
+                {isToday
+                  ? `Check-in closed at ${formatTime12(wakeDeadline)}. Only the referee can change this now.`
+                  : 'Wake-up can only be checked in on the day itself.'}
               </p>
-            </div>
-          ) : (
-            <p className="text-[13px] text-rose-300 pt-3 leading-relaxed">
-              {isToday
-                ? `Check-in closed at ${formatTime12(wakeDeadline)}. Only the referee can change this now.`
-                : 'Wake-up can only be checked in on the day itself.'}
-            </p>
-          )}
-        </TaskCard>
+            )}
+          </TaskCard>
+        )}
 
-        <TaskCard {...card('noMasturbation')} />
-        <TaskCard {...card('noSmokingAlcohol')} />
+        {isHabitEnabled('noMasturbation') && <TaskCard {...card('noMasturbation')} />}
+        {isHabitEnabled('noSmokingAlcohol') && <TaskCard {...card('noSmokingAlcohol')} />}
 
-        <TaskCard
-          {...card('reading', {
-            subtitle: tasks.reading.pagesRead ? `${tasks.reading.pagesRead} pages read` : desc('reading'),
-          })}
-        >
-          <Row label="Pages read">
-            <Stepper
+        {isHabitEnabled('reading') && (
+          <TaskCard
+            {...card('reading', {
+              subtitle: tasks.reading.pagesRead ? `${tasks.reading.pagesRead} pages read` : desc('reading'),
+            })}
+          >
+            <Row label="Pages read">
+              <Stepper
+                disabled={disabled}
+                value={tasks.reading.pagesRead}
+                onDec={() => {
+                  const v = Math.max(0, tasks.reading.pagesRead - 1);
+                  update('reading', { pagesRead: v, completed: v >= config.readingMinPages });
+                }}
+                onInc={() => {
+                  const v = tasks.reading.pagesRead + 1;
+                  update('reading', { pagesRead: v, completed: v >= config.readingMinPages });
+                }}
+              />
+            </Row>
+            <input
+              className="input"
               disabled={disabled}
-              value={tasks.reading.pagesRead}
-              onDec={() => {
-                const v = Math.max(0, tasks.reading.pagesRead - 1);
-                update('reading', { pagesRead: v, completed: v >= config.readingMinPages });
-              }}
-              onInc={() => {
-                const v = tasks.reading.pagesRead + 1;
-                update('reading', { pagesRead: v, completed: v >= config.readingMinPages });
-              }}
+              placeholder="Book title"
+              value={tasks.reading.bookTitle || ''}
+              onChange={e => update('reading', { bookTitle: e.target.value })}
             />
-          </Row>
-          <input
-            className="input"
-            disabled={disabled}
-            placeholder="Book title"
-            value={tasks.reading.bookTitle || ''}
-            onChange={e => update('reading', { bookTitle: e.target.value })}
-          />
-          <input
-            className="input"
-            disabled={disabled}
-            placeholder="Key takeaway"
-            value={tasks.reading.keyTakeaway || ''}
-            onChange={e => update('reading', { keyTakeaway: e.target.value })}
-          />
-        </TaskCard>
+            <input
+              className="input"
+              disabled={disabled}
+              placeholder="Key takeaway"
+              value={tasks.reading.keyTakeaway || ''}
+              onChange={e => update('reading', { keyTakeaway: e.target.value })}
+            />
+          </TaskCard>
+        )}
 
         {/* No gym today: the Gym habit is dropped and Physical Activity carries the bumped target */}
-        {!noGym && (
+        {!noGym && isHabitEnabled('gym') && (
           <TaskCard {...card('gym', { subtitle: tasks.gym.workoutNotes || desc('gym') })}>
             <input
               className="input mt-3"
@@ -436,206 +446,295 @@ export const DailyTrackerScreen: React.FC<DailyTrackerScreenProps> = ({ focusTas
           </TaskCard>
         )}
 
-        <TaskCard
-          {...card('physicalActivity', {
-            subtitle: pa.value ? `${pa.value.toLocaleString('en-IN')} / ${paTarget.target.toLocaleString('en-IN')} ${paTarget.unit}` : desc('physicalActivity'),
-            badge: noGym ? <Chip tone="violet">No gym</Chip> : undefined,
-          })}
-        >
-          {noGym && (
-            <p className="text-[13px] text-violet-200/90 pt-3">No gym today, so the Gym habit is off and these targets are higher.</p>
-          )}
-          <div className="pt-3">
-            <Segmented
-              disabled={disabled}
-              value={pa.type}
-              onChange={type => update('physicalActivity', { type, value: 0, completed: false })}
-              options={(['steps', 'run', 'floors'] as ActivityType[]).map(t => ({ value: t, label: activityTargets[t].label }))}
-            />
-          </div>
-          <div className="relative">
-            <input
-              type="number"
-              inputMode="decimal"
-              step={paTarget.step}
-              className="input pr-16"
-              disabled={disabled}
-              placeholder={`Enter ${paTarget.unit}`}
-              value={pa.value || ''}
-              onChange={e => {
-                const val = parseFloat(e.target.value) || 0;
-                update('physicalActivity', { value: val, completed: val >= paTarget.target });
-              }}
-            />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-zinc-500">{paTarget.unit}</span>
-          </div>
-          <ProgressBar
-            value={paTarget.target ? ((pa.value || 0) / paTarget.target) * 100 : 0}
-            tone={done('physicalActivity') ? 'emerald' : 'rose'}
-          />
-        </TaskCard>
-
-        <TaskCard
-          {...card('diet', {
-            subtitle:
-              tasks.diet.calories || tasks.diet.proteinGrams
-                ? `${(tasks.diet.calories || 0).toLocaleString('en-IN')} kcal · ${tasks.diet.proteinGrams || 0} g protein`
-                : desc('diet'),
-          })}
-        >
-          <div className="grid grid-cols-2 gap-2 pt-3">
-            {(
-              [
-                { key: 'calories', label: 'Calories', unit: 'kcal', target: config.calorieTarget, quick: [250, 500], tone: 'amber' },
-                { key: 'proteinGrams', label: 'Protein', unit: 'g', target: config.proteinTargetG, quick: [10, 25], tone: 'emerald' },
-              ] as const
-            ).map(n => {
-              const val = Number(tasks.diet[n.key] || 0);
-              const pct = n.target ? (val / n.target) * 100 : 0;
-              return (
-                <div key={n.key} className="rounded-xl bg-ink-850 border border-white/[0.06] p-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[12px] text-zinc-500">{n.label}</span>
-                    <span className="text-[12px] text-zinc-600 tabular">/ {n.target.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      disabled={disabled}
-                      value={val || ''}
-                      placeholder="0"
-                      aria-label={`${n.label} today`}
-                      onChange={e => update('diet', { [n.key]: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
-                      className="w-full min-w-0 bg-transparent text-xl font-bold text-white tabular focus:outline-none placeholder:text-zinc-600 disabled:opacity-60"
-                    />
-                    <span className="text-[13px] text-zinc-500 shrink-0">{n.unit}</span>
-                  </div>
-                  <ProgressBar value={pct} tone={pct > 110 && n.key === 'calories' ? 'rose' : n.tone} className="mt-2" />
-                  <div className="flex gap-1.5 mt-2.5">
-                    {n.quick.map(q => (
-                      <button
-                        key={q}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => update('diet', { [n.key]: val + q })}
-                        className="flex-1 h-8 rounded-lg bg-white/[0.06] text-[12px] font-semibold text-zinc-300 active:bg-white/[0.1] disabled:opacity-40"
-                      >
-                        +{q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
+        {isHabitEnabled('physicalActivity') && (
+          <TaskCard
+            {...card('physicalActivity', {
+              subtitle: pa.value ? `${pa.value.toLocaleString('en-IN')} / ${paTarget.target.toLocaleString('en-IN')} ${paTarget.unit}` : desc('physicalActivity'),
+              badge: noGym ? <Chip tone="violet">No gym</Chip> : undefined,
             })}
-          </div>
-          <input
-            className="input"
-            disabled={disabled}
-            placeholder="What did you eat today?"
-            value={tasks.diet.notes || ''}
-            onChange={e => update('diet', { notes: e.target.value })}
-          />
-        </TaskCard>
-
-        <TaskCard
-          {...card('progressPhoto', {
-            subtitle: tasks.progressPhoto.photoUrl ? 'Photo added' : desc('progressPhoto'),
-          })}
-        >
-          <div className="pt-3">
-            {uploading ? (
-              <div className="h-40 rounded-xl bg-ink-850 flex items-center justify-center gap-2 text-sm text-zinc-400">
-                <Loader2 className="w-5 h-5 animate-spin" /> Uploading…
-              </div>
-            ) : tasks.progressPhoto.photoUrl ? (
-              <div className="relative rounded-xl overflow-hidden bg-black aspect-[4/5] max-h-80 mx-auto">
-                <img src={tasks.progressPhoto.photoUrl} alt="Progress" className="w-full h-full object-cover" />
-                {isEditable && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-3 right-3 btn-sm btn bg-black/70 text-white backdrop-blur"
-                  >
-                    <Upload className="w-4 h-4" /> Replace
-                  </button>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full h-36 rounded-xl border-2 border-dashed border-white/[0.12] flex flex-col items-center justify-center gap-1.5 text-zinc-400 active:bg-white/[0.03] disabled:opacity-40"
-              >
-                <Upload className="w-6 h-6 text-rose-400" />
-                <span className="text-[15px] font-semibold text-white">Take or upload photo</span>
-                <span className="text-[12px]">Camera or gallery</span>
-              </button>
+          >
+            {noGym && (
+              <p className="text-[13px] text-violet-200/90 pt-3">No gym today, so the Gym habit is off and these targets are higher.</p>
             )}
-          </div>
-        </TaskCard>
+            <div className="pt-3">
+              <Segmented
+                disabled={disabled}
+                value={pa.type}
+                onChange={type => update('physicalActivity', { type, value: 0, completed: false })}
+                options={(['steps', 'run', 'floors'] as ActivityType[]).map(t => ({ value: t, label: activityTargets[t].label }))}
+              />
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="decimal"
+                step={paTarget.step}
+                className="input pr-16"
+                disabled={disabled}
+                placeholder={`Enter ${paTarget.unit}`}
+                value={pa.value || ''}
+                onChange={e => {
+                  const val = parseFloat(e.target.value) || 0;
+                  update('physicalActivity', { value: val, completed: val >= paTarget.target });
+                }}
+              />
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-zinc-500">{paTarget.unit}</span>
+            </div>
+            <ProgressBar
+              value={paTarget.target ? ((pa.value || 0) / paTarget.target) * 100 : 0}
+              tone={done('physicalActivity') ? 'emerald' : 'rose'}
+            />
+          </TaskCard>
+        )}
+
+        {isHabitEnabled('diet') && (
+          <TaskCard
+            {...card('diet', {
+              subtitle:
+                tasks.diet.calories || tasks.diet.proteinGrams
+                  ? `${(tasks.diet.calories || 0).toLocaleString('en-IN')} kcal · ${tasks.diet.proteinGrams || 0} g protein`
+                  : desc('diet'),
+            })}
+          >
+            <div className="grid grid-cols-2 gap-2 pt-3">
+              {(
+                [
+                  { key: 'calories', label: 'Calories', unit: 'kcal', target: config.calorieTarget, quick: [250, 500], tone: 'amber' },
+                  { key: 'proteinGrams', label: 'Protein', unit: 'g', target: config.proteinTargetG, quick: [10, 25], tone: 'emerald' },
+                ] as const
+              ).map(n => {
+                const val = Number(tasks.diet[n.key] || 0);
+                const pct = n.target ? (val / n.target) * 100 : 0;
+                return (
+                  <div key={n.key} className="rounded-xl bg-ink-850 border border-white/[0.06] p-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[12px] text-zinc-500">{n.label}</span>
+                      <span className="text-[12px] text-zinc-600 tabular">/ {n.target.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex items-baseline gap-1 mt-0.5">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        disabled={disabled}
+                        value={val || ''}
+                        placeholder="0"
+                        aria-label={`${n.label} today`}
+                        onChange={e => update('diet', { [n.key]: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+                        className="w-full min-w-0 bg-transparent text-xl font-bold text-white tabular focus:outline-none placeholder:text-zinc-600 disabled:opacity-60"
+                      />
+                      <span className="text-[13px] text-zinc-500 shrink-0">{n.unit}</span>
+                    </div>
+                    <ProgressBar value={pct} tone={pct > 110 && n.key === 'calories' ? 'rose' : n.tone} className="mt-2" />
+                    <div className="flex gap-1.5 mt-2.5">
+                      {n.quick.map(q => (
+                        <button
+                          key={q}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => update('diet', { [n.key]: val + q })}
+                          className="flex-1 h-8 rounded-lg bg-white/[0.06] text-[12px] font-semibold text-zinc-300 active:bg-white/[0.1] disabled:opacity-40"
+                        >
+                          +{q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <input
+              className="input"
+              disabled={disabled}
+              placeholder="What did you eat today?"
+              value={tasks.diet.notes || ''}
+              onChange={e => update('diet', { notes: e.target.value })}
+            />
+          </TaskCard>
+        )}
+
+        {isHabitEnabled('progressPhoto') && (
+          <TaskCard
+            {...card('progressPhoto', {
+              subtitle: tasks.progressPhoto.photoUrl ? 'Photo added' : desc('progressPhoto'),
+            })}
+          >
+            <div className="pt-3">
+              {uploading ? (
+                <div className="h-40 rounded-xl bg-ink-850 flex items-center justify-center gap-2 text-sm text-zinc-400">
+                  <Loader2 className="w-5 h-5 animate-spin" /> Uploading…
+                </div>
+              ) : tasks.progressPhoto.photoUrl ? (
+                <div className="relative rounded-xl overflow-hidden bg-black aspect-[4/5] max-h-80 mx-auto">
+                  <img src={tasks.progressPhoto.photoUrl} alt="Progress" className="w-full h-full object-cover" />
+                  {isEditable && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="absolute bottom-3 right-3 btn-sm btn bg-black/70 text-white backdrop-blur"
+                    >
+                      <Upload className="w-4 h-4" /> Replace
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-36 rounded-xl border-2 border-dashed border-white/[0.12] flex flex-col items-center justify-center gap-1.5 text-zinc-400 active:bg-white/[0.03] disabled:opacity-40"
+                >
+                  <Upload className="w-6 h-6 text-rose-400" />
+                  <span className="text-[15px] font-semibold text-white">Take or upload photo</span>
+                  <span className="text-[12px]">Camera or gallery</span>
+                </button>
+              )}
+            </div>
+          </TaskCard>
+        )}
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
 
-        <TaskCard {...card('learning', { subtitle: tasks.learning.topic || desc('learning') })}>
-          <input
-            className="input mt-3"
-            disabled={disabled}
-            placeholder="Topic"
-            value={tasks.learning.topic || ''}
-            onChange={e => update('learning', { topic: e.target.value })}
-          />
-          <input
-            className="input"
-            disabled={disabled}
-            placeholder="What did you learn?"
-            value={tasks.learning.notes || ''}
-            onChange={e => update('learning', { notes: e.target.value })}
-          />
-        </TaskCard>
-
-        <TaskCard
-          {...card('health', {
-            subtitle: tasks.health.waterLiters ? `${tasks.health.waterLiters} L water` : desc('health'),
-          })}
-        >
-          <Row label="Water">
-            <Stepper
+        {isHabitEnabled('learning') && (
+          <TaskCard {...card('learning', { subtitle: tasks.learning.topic || desc('learning') })}>
+            <input
+              className="input mt-3"
               disabled={disabled}
-              value={`${tasks.health.waterLiters || 0} L`}
-              onDec={() => update('health', { waterLiters: Math.max(0, (tasks.health.waterLiters || 0) - 0.5) })}
-              onInc={() => update('health', { waterLiters: (tasks.health.waterLiters || 0) + 0.5 })}
+              placeholder="Topic"
+              value={tasks.learning.topic || ''}
+              onChange={e => update('learning', { topic: e.target.value })}
             />
-          </Row>
-          <input
-            className="input"
-            disabled={disabled}
-            placeholder="How's your mind today?"
-            value={tasks.health.notes || ''}
-            onChange={e => update('health', { notes: e.target.value })}
-          />
-        </TaskCard>
-
-        <TaskCard
-          {...card('family', {
-            subtitle: tasks.family.minutes ? `${tasks.family.minutes} min with family` : desc('family'),
-          })}
-        >
-          <Row label="Minutes">
-            <Stepper
+            <input
+              className="input"
               disabled={disabled}
-              value={`${tasks.family.minutes} min`}
-              onDec={() => {
-                const m = Math.max(0, tasks.family.minutes - 5);
-                update('family', { minutes: m, completed: m >= config.familyTargetMinutes });
-              }}
-              onInc={() => {
-                const m = tasks.family.minutes + 5;
-                update('family', { minutes: m, completed: m >= config.familyTargetMinutes });
-              }}
+              placeholder="What did you learn?"
+              value={tasks.learning.notes || ''}
+              onChange={e => update('learning', { notes: e.target.value })}
             />
-          </Row>
-        </TaskCard>
+          </TaskCard>
+        )}
+
+        {isHabitEnabled('health') && (
+          <TaskCard
+            {...card('health', {
+              subtitle: tasks.health.waterLiters ? `${tasks.health.waterLiters} L water` : desc('health'),
+            })}
+          >
+            <Row label="Water">
+              <Stepper
+                disabled={disabled}
+                value={`${tasks.health.waterLiters || 0} L`}
+                onDec={() => update('health', { waterLiters: Math.max(0, (tasks.health.waterLiters || 0) - 0.5) })}
+                onInc={() => update('health', { waterLiters: (tasks.health.waterLiters || 0) + 0.5 })}
+              />
+            </Row>
+            <input
+              className="input"
+              disabled={disabled}
+              placeholder="How's your mind today?"
+              value={tasks.health.notes || ''}
+              onChange={e => update('health', { notes: e.target.value })}
+            />
+          </TaskCard>
+        )}
+
+        {isHabitEnabled('family') && (
+          <TaskCard
+            {...card('family', {
+              subtitle: tasks.family.minutes ? `${tasks.family.minutes} min with family` : desc('family'),
+            })}
+          >
+            <Row label="Minutes">
+              <Stepper
+                disabled={disabled}
+                value={`${tasks.family.minutes} min`}
+                onDec={() => {
+                  const m = Math.max(0, tasks.family.minutes - 5);
+                  update('family', { minutes: m, completed: m >= config.familyTargetMinutes });
+                }}
+                onInc={() => {
+                  const m = tasks.family.minutes + 5;
+                  update('family', { minutes: m, completed: m >= config.familyTargetMinutes });
+                }}
+              />
+            </Row>
+          </TaskCard>
+        )}
+
+        {/* Custom Habits */}
+        {((config.habits || []).filter(h => (h.category === 'custom' || h.id.startsWith('custom_')) && h.enabled !== false)).map(habit => {
+          const customData = tasks.custom?.[habit.id];
+          return (
+            <TaskCard
+              key={habit.id}
+              {...card(habit.id, {
+                title: habit.name,
+                subtitle:
+                  habit.description ||
+                  (habit.targetValue && habit.targetUnit
+                    ? `Target: ${habit.targetValue} ${habit.targetUnit}`
+                    : habit.required === false
+                    ? 'Optional habit'
+                    : 'Daily habit'),
+                icon: getTaskIcon(habit.id, habit.icon),
+                badge: habit.required === false ? <Chip tone="neutral">Optional</Chip> : undefined,
+              })}
+            >
+              <div className="pt-3 space-y-2">
+                {habit.targetType === 'number' && (
+                  <Row label={habit.targetUnit || 'Value'}>
+                    <input
+                      type="number"
+                      disabled={disabled}
+                      value={customData?.value ?? ''}
+                      placeholder={`Target: ${habit.targetValue || 0}`}
+                      onChange={e => {
+                        const val = parseFloat(e.target.value) || 0;
+                        const reqVal = habit.targetValue ?? 1;
+                        updateCurrentLog(prev => ({
+                          ...prev,
+                          tasks: {
+                            ...prev.tasks,
+                            custom: {
+                              ...prev.tasks?.custom,
+                              [habit.id]: {
+                                completed: val >= reqVal,
+                                value: val,
+                                notes: customData?.notes || '',
+                              },
+                            },
+                          },
+                        }));
+                      }}
+                      className="input w-36 text-center"
+                    />
+                  </Row>
+                )}
+                <input
+                  className="input"
+                  disabled={disabled}
+                  placeholder="Notes / reflection"
+                  value={customData?.notes || ''}
+                  onChange={e => {
+                    const n = e.target.value;
+                    updateCurrentLog(prev => ({
+                      ...prev,
+                      tasks: {
+                        ...prev.tasks,
+                        custom: {
+                          ...prev.tasks?.custom,
+                          [habit.id]: {
+                            completed: customData?.completed ?? false,
+                            value: customData?.value,
+                            notes: n,
+                          },
+                        },
+                      },
+                    }));
+                  }}
+                />
+              </div>
+            </TaskCard>
+          );
+        })}
       </section>
 
       {/* Optional */}

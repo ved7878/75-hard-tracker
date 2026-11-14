@@ -25,7 +25,7 @@ const TAB_LABELS: Record<string, string> = {
 const MainAppContent: React.FC = () => {
   const { currentUser, isAdmin } = useChallenge();
   const [activeTab, setActiveTabState] = useState<string>('dashboard');
-  const [focusTaskId, setFocusTaskId] = useState<keyof TaskState | undefined>(undefined);
+  const [focusTaskId, setFocusTaskId] = useState<string | undefined>(undefined);
   const [returnTab, setReturnTab] = useState<string>('settings');
 
   // Reset to Today on a new login. Admin previewing different challengers keeps the same
@@ -52,7 +52,7 @@ const MainAppContent: React.FC = () => {
     return <LoginScreen />;
   }
 
-  const openTask = (taskId?: keyof TaskState) => {
+  const openTask = (taskId?: string) => {
     setFocusTaskId(taskId);
     setActiveTabState('tracker');
     if (!taskId) window.scrollTo({ top: 0 });

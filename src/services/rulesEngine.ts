@@ -3,6 +3,7 @@ import type {
   ChallengeConfig,
   DailyLog,
   DayStatus,
+  HabitConfig,
   StreakStats,
   TaskState,
   UserProfile,
@@ -11,12 +12,28 @@ import type {
   ChallengerDepositBalance,
 } from '../types/index.ts';
 
+export const DEFAULT_HABITS: HabitConfig[] = [
+  { id: 'wakeUp', name: 'Wake Up', description: 'Early morning discipline', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'AlarmClock' },
+  { id: 'noMasturbation', name: 'No Masturbation', description: 'Strict discipline', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'Ban' },
+  { id: 'noSmokingAlcohol', name: 'No Smoking / Alcohol', description: 'Zero tolerance', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'WineOff' },
+  { id: 'reading', name: 'Reading', description: '5–10 pages, non-fiction', enabled: true, required: true, category: 'core', targetType: 'number', targetValue: 5, targetUnit: 'pages', icon: 'BookOpen' },
+  { id: 'gym', name: 'Gym Workout', description: 'Daily dedicated workout', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'Dumbbell' },
+  { id: 'physicalActivity', name: 'Physical Activity', description: '10K steps / 3 km / 20 floors', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'Footprints' },
+  { id: 'diet', name: 'Clean Diet', description: 'No sugar, junk or excess oil', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'Salad' },
+  { id: 'progressPhoto', name: 'Daily Progress Photo', description: 'One full-body picture', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'Camera' },
+  { id: 'learning', name: 'Learn Something', description: 'One new skill or idea', enabled: true, required: true, category: 'core', targetType: 'text', icon: 'GraduationCap' },
+  { id: 'health', name: 'Health & Mind', description: 'Water, rest, calm mind', enabled: true, required: true, category: 'core', targetType: 'checkbox', icon: 'HeartPulse' },
+  { id: 'family', name: 'Family Time', description: '10 min quality time', enabled: true, required: true, category: 'core', targetType: 'number', targetValue: 10, targetUnit: 'mins', icon: 'Users' },
+];
+
 export const DEFAULT_CONFIG: ChallengeConfig = {
   startDate: '2026-11-11',
   durationDays: 75,
   endDate: '2027-01-24',
   depositAmount: 2000,
   currencySymbol: '₹',
+  penaltyEnabled: true,
+  habits: DEFAULT_HABITS,
   wakeUpTarget: '06:00',
   wakeUpTravelTarget: '08:00',
   wakeUpGraceMinutes: 10,
@@ -137,6 +154,24 @@ export function normalizeConfig(config: Partial<ChallengeConfig>): ChallengeConf
   merged.wakeUpGraceMinutes = Number.isFinite(grace) && grace >= 0 ? grace : DEFAULT_CONFIG.wakeUpGraceMinutes;
   const deposit = Number(merged.depositAmount);
   merged.depositAmount = Number.isFinite(deposit) && deposit >= 0 ? deposit : DEFAULT_CONFIG.depositAmount;
+  merged.penaltyEnabled = config.penaltyEnabled !== false;
+
+  if (!Array.isArray(config.habits) || config.habits.length === 0) {
+    merged.habits = DEFAULT_HABITS.map(h => ({ ...h }));
+  } else {
+    merged.habits = config.habits.map(h => ({
+      id: String(h.id),
+      name: String(h.name || h.id),
+      description: String(h.description || ''),
+      enabled: h.enabled !== false,
+      required: h.required !== false,
+      category: h.category || (DEFAULT_HABITS.some(d => d.id === h.id) ? 'core' : 'custom'),
+      targetType: h.targetType || 'checkbox',
+      targetValue: h.targetValue,
+      targetUnit: h.targetUnit,
+      icon: h.icon,
+    }));
+  }
   return merged;
 }
 
@@ -501,15 +536,17 @@ export function evaluatePhysicalActivity(
 }
 
 export interface TaskValidationItem {
-  id: keyof TaskState;
+  id: string;
   title: string;
   isCompleted: boolean;
   requirementDesc: string;
+  required?: boolean;
 }
 
 /**
  * Check the required habits for a given day log against configured rules
- * (11 normally, 10 on a no-gym day where Physical Activity carries the bumped target)
+ * (11 normally, 10 on a no-gym day where Physical Activity carries the bumped target,
+ * or dynamically adjusted according to admin-configured habits)
  */
 export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
   items: TaskValidationItem[];
@@ -564,84 +601,93 @@ export function validateDayTasks(log: DailyLog, config: ChallengeConfig): {
   // 11. Family
   const familyValid = tasks.family.completed || tasks.family.minutes >= config.familyTargetMinutes;
 
-  const items: TaskValidationItem[] = [
-    {
-      id: 'wakeUp',
-      title: 'Wake Up',
+  const coreEvals: Record<string, { isCompleted: boolean; defaultDesc: string }> = {
+    wakeUp: {
       isCompleted: wakeUpValid,
-      requirementDesc: `Check in by ${formatTime12(wakeDeadline)}${effectiveWakeTarget !== config.wakeUpTarget ? ' (travel)' : ''}`,
+      defaultDesc: `Check in by ${formatTime12(wakeDeadline)}${effectiveWakeTarget !== config.wakeUpTarget ? ' (travel)' : ''}`,
     },
-    {
-      id: 'noMasturbation',
-      title: 'No Masturbation',
+    noMasturbation: {
       isCompleted: noMasturbationValid,
-      requirementDesc: 'Strict discipline',
+      defaultDesc: 'Strict discipline',
     },
-    {
-      id: 'noSmokingAlcohol',
-      title: 'No Smoking / Alcohol',
+    noSmokingAlcohol: {
       isCompleted: noSmokingAlcoholValid,
-      requirementDesc: 'Zero tolerance',
+      defaultDesc: 'Zero tolerance',
     },
-    {
-      id: 'reading',
-      title: 'Reading',
+    reading: {
       isCompleted: readingValid,
-      requirementDesc: `${config.readingMinPages}–${config.readingMaxPages} pages, non-fiction`,
+      defaultDesc: `${config.readingMinPages}–${config.readingMaxPages} pages, non-fiction`,
     },
-    {
-      id: 'gym',
-      title: 'Gym Workout',
+    gym: {
       isCompleted: gymValid,
-      requirementDesc: 'Daily dedicated workout',
+      defaultDesc: 'Daily dedicated workout',
     },
-    {
-      id: 'physicalActivity',
-      title: 'Physical Activity',
+    physicalActivity: {
       isCompleted: paValid,
-      requirementDesc: noGym
+      defaultDesc: noGym
         ? `No gym today · ${describeNoGymTargets(config)}`
         : `${(config.stepsTarget / 1000).toFixed(0)}K steps · ${config.runTargetKm} km · ${config.floorsTarget} floors`,
     },
-    {
-      id: 'diet',
-      title: 'Clean Diet',
+    diet: {
       isCompleted: dietValid,
-      requirementDesc: 'No sugar, junk or excess oil',
+      defaultDesc: 'No sugar, junk or excess oil',
     },
-    {
-      id: 'progressPhoto',
-      title: 'Daily Progress Photo',
+    progressPhoto: {
       isCompleted: photoValid,
-      requirementDesc: 'One full-body picture',
+      defaultDesc: 'One full-body picture',
     },
-    {
-      id: 'learning',
-      title: 'Learn Something',
+    learning: {
       isCompleted: learningValid,
-      requirementDesc: 'One new skill or idea',
+      defaultDesc: 'One new skill or idea',
     },
-    {
-      id: 'health',
-      title: 'Health & Mind',
+    health: {
       isCompleted: healthValid,
-      requirementDesc: 'Water, rest, calm mind',
+      defaultDesc: 'Water, rest, calm mind',
     },
-    {
-      id: 'family',
-      title: 'Family Time',
+    family: {
       isCompleted: familyValid,
-      requirementDesc: `${config.familyTargetMinutes} min quality time`,
+      defaultDesc: `${config.familyTargetMinutes} min quality time`,
     },
-  ];
+  };
 
-  // No gym today: the Gym habit is removed from the day's list
-  if (noGym) items.splice(items.findIndex(i => i.id === 'gym'), 1);
+  const habitList = config.habits && config.habits.length > 0 ? config.habits : DEFAULT_HABITS;
+  const items: TaskValidationItem[] = [];
+
+  habitList.forEach(h => {
+    // If habit is disabled/removed by admin, skip it completely
+    if (h.enabled === false) return;
+    // On no-gym day, gym habit is dropped
+    if (h.id === 'gym' && noGym) return;
+
+    if (coreEvals[h.id]) {
+      items.push({
+        id: h.id,
+        title: h.name,
+        isCompleted: coreEvals[h.id].isCompleted,
+        requirementDesc: h.description || coreEvals[h.id].defaultDesc,
+        required: h.required !== false,
+      });
+    } else {
+      // Custom habit
+      const isCustomDone = Boolean(
+        log.tasks.custom?.[h.id]?.completed ||
+        (log.tasks as any)[h.id]?.completed
+      );
+      items.push({
+        id: h.id,
+        title: h.name,
+        isCompleted: isCustomDone,
+        requirementDesc: h.description || 'Custom daily requirement',
+        required: h.required !== false,
+      });
+    }
+  });
 
   const completedCount = items.filter(i => i.isCompleted).length;
   const totalCount = items.length;
-  const allCompleted = completedCount === totalCount;
-  const failedNames = items.filter(i => !i.isCompleted).map(i => i.title);
+  const requiredItems = items.filter(i => i.required !== false);
+  const allCompleted = requiredItems.length > 0 ? requiredItems.every(i => i.isCompleted) : (totalCount > 0 ? completedCount === totalCount : true);
+  const failedNames = requiredItems.filter(i => !i.isCompleted).map(i => i.title);
 
   return {
     items,
@@ -787,6 +833,30 @@ export function calculateSquadDepositLedger(
 ): SquadDepositLedger {
   const challengers = users.filter(u => u.role !== 'admin');
   const balances: Record<string, ChallengerDepositBalance> = {};
+
+  if (config.penaltyEnabled === false) {
+    challengers.forEach(u => {
+      const init = u.depositAmount !== undefined ? u.depositAmount : config.depositAmount;
+      balances[u.id] = {
+        userId: u.id,
+        name: u.name,
+        avatar: u.avatar,
+        initialDeposit: init,
+        currentDeposit: init,
+        netChange: 0,
+        penaltiesPaid: 0,
+        bountiesEarned: 0,
+        missCount: 0,
+        status: 'safe',
+      };
+    });
+    return {
+      balances,
+      transactions: [],
+      totalPool: 0,
+    };
+  }
+
   const PENALTY_PER_MISSER = 200;
 
   challengers.forEach(u => {

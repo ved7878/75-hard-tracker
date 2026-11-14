@@ -4,12 +4,11 @@ import { useChallenge } from '../../context/ChallengeContext';
 import { validateDayTasks, isWakeUpCheckInOpen, getWakeUpDeadline, formatTime12 } from '../../services/rulesEngine';
 import { useNow } from '../../hooks/useNow';
 import { toggleTask, isLateWakeUp } from '../../services/taskActions';
-import { TaskState } from '../../types';
-import { TASK_ICONS } from '../common/taskMeta';
+import { getTaskIcon } from '../common/taskMeta';
 import { CheckButton, SectionHeader } from '../ui';
 
 interface QuickTasksListProps {
-  onOpenDetails: (taskId?: keyof TaskState) => void;
+  onOpenDetails: (taskId?: string) => void;
 }
 
 export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails }) => {
@@ -19,7 +18,7 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
   const wakeLocked = !isAdmin && !isWakeUpCheckInOpen(currentLog, config, now);
   const { items, completedCount, totalCount } = validateDayTasks(currentLog, config);
 
-  const onToggle = (taskId: keyof TaskState) => {
+  const onToggle = (taskId: string) => {
     // The photo can't be ticked without a photo – take the user to the uploader instead
     if (taskId === 'progressPhoto' && !currentLog.tasks.progressPhoto.photoUrl) {
       onOpenDetails('progressPhoto');
@@ -45,7 +44,7 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
       />
       <div className="card overflow-hidden divide-y divide-white/[0.05]">
         {items.map(item => {
-          const Icon = TASK_ICONS[item.id];
+          const Icon = getTaskIcon(item.id);
           const done = item.isCompleted;
           return (
             <div

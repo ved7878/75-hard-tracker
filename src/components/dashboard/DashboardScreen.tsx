@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlaneTakeoff, Stethoscope, CalendarClock, Flame, Wallet, ShieldCheck, ChevronRight, Sparkles } from 'lucide-react';
+import { PlaneTakeoff, Stethoscope, CalendarClock, Flame, Wallet, ShieldCheck, ChevronRight, Sparkles, Trophy } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { DayProgressRing } from './DayProgressRing';
 import { QuickTasksList } from './QuickTasksList';
@@ -13,12 +13,11 @@ import {
   isGymUnavailable,
   describeNoGymTargets,
 } from '../../services/rulesEngine';
-import { TaskState } from '../../types';
 import { Card, Notice, SectionHeader, ProgressBar } from '../ui';
 
 interface DashboardScreenProps {
   onNavigateTab: (tab: string) => void;
-  onOpenTaskDetails: (taskId?: keyof TaskState) => void;
+  onOpenTaskDetails: (taskId?: string) => void;
 }
 
 const greeting = () => {
@@ -153,24 +152,39 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab,
                   <span className="text-sm font-medium text-zinc-500">{streakStats.currentStreak === 1 ? 'day' : 'days'}</span>
                 </span>
               </button>
-              <button
-                onClick={() => onNavigateTab('analytics')}
-                className="rounded-xl bg-white/[0.04] px-3 py-2.5 text-left active:bg-white/[0.07] transition"
-              >
-                <span className="flex items-center gap-1.5 text-[12px] text-zinc-500">
-                  <Wallet className="w-3.5 h-3.5 text-emerald-400" /> Deposit
-                </span>
-                <span className="block text-lg font-bold text-white tabular mt-0.5">
-                  {config.currencySymbol}
-                  {balance.toLocaleString('en-IN')}
-                  {net !== 0 && (
-                    <span className={`ml-1.5 text-sm font-semibold ${net > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {net > 0 ? '+' : '−'}
-                      {Math.abs(net)}
-                    </span>
-                  )}
-                </span>
-              </button>
+              {config.penaltyEnabled !== false ? (
+                <button
+                  onClick={() => onNavigateTab('analytics')}
+                  className="rounded-xl bg-white/[0.04] px-3 py-2.5 text-left active:bg-white/[0.07] transition"
+                >
+                  <span className="flex items-center gap-1.5 text-[12px] text-zinc-500">
+                    <Wallet className="w-3.5 h-3.5 text-emerald-400" /> Deposit
+                  </span>
+                  <span className="block text-lg font-bold text-white tabular mt-0.5">
+                    {config.currencySymbol}
+                    {balance.toLocaleString('en-IN')}
+                    {net !== 0 && (
+                      <span className={`ml-1.5 text-sm font-semibold ${net > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {net > 0 ? '+' : '−'}
+                        {Math.abs(net)}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => onNavigateTab('analytics')}
+                  className="rounded-xl bg-white/[0.04] px-3 py-2.5 text-left active:bg-white/[0.07] transition"
+                >
+                  <span className="flex items-center gap-1.5 text-[12px] text-zinc-500">
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" /> Completed
+                  </span>
+                  <span className="block text-lg font-bold text-white tabular mt-0.5">
+                    {streakStats.totalCompletedDays}{' '}
+                    <span className="text-sm font-medium text-zinc-500">/ {config.durationDays}d</span>
+                  </span>
+                </button>
+              )}
             </div>
           </Card>
 
@@ -218,10 +232,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab,
           <SectionHeader
             title="Squad today"
             action={
-              <span className="text-[13px] text-zinc-500 tabular">
-                Pool {config.currencySymbol}
-                {depositLedger.totalPool.toLocaleString('en-IN')}
-              </span>
+              config.penaltyEnabled !== false ? (
+                <span className="text-[13px] text-zinc-500 tabular">
+                  Pool {config.currencySymbol}
+                  {depositLedger.totalPool.toLocaleString('en-IN')}
+                </span>
+              ) : (
+                <span className="text-[13px] text-zinc-500 tabular">
+                  {squadMembers.length} challengers
+                </span>
+              )
             }
           />
           <div className="card overflow-hidden divide-y divide-white/[0.05]">
@@ -255,19 +275,27 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab,
                         <Flame className="w-3 h-3 text-amber-400" />
                         {m.currentStreak}-day streak
                       </span>
-                      <span className={memberNet > 0 ? 'text-emerald-400' : memberNet < 0 ? 'text-rose-400' : ''}>
-                        {config.currencySymbol}
-                        {(m.currentDeposit ?? 0).toLocaleString('en-IN')}
-                      </span>
+                      {config.penaltyEnabled !== false ? (
+                        <span className={memberNet > 0 ? 'text-emerald-400' : memberNet < 0 ? 'text-rose-400' : ''}>
+                          {config.currencySymbol}
+                          {(m.currentDeposit ?? 0).toLocaleString('en-IN')}
+                        </span>
+                      ) : (
+                        <span className={m.todayAllCompleted ? 'text-emerald-400 font-medium' : 'text-zinc-400'}>
+                          {m.todayAllCompleted ? '✓ Done today' : `${Math.round(memberPct)}%`}
+                        </span>
+                      )}
                     </span>
                   </span>
                 </Comp>
               );
             })}
           </div>
-          <p className="text-[12px] text-zinc-500 leading-relaxed mt-2 px-1">
-            Miss a day and {config.currencySymbol}200 moves from you to the people who didn't.
-          </p>
+          {config.penaltyEnabled !== false && (
+            <p className="text-[12px] text-zinc-500 leading-relaxed mt-2 px-1">
+              Miss a day and {config.currencySymbol}200 moves from you to the people who didn't.
+            </p>
+          )}
         </section>
       )}
     </div>

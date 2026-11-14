@@ -11,6 +11,9 @@ import {
   Stethoscope,
   ExternalLink,
   Save,
+  Plus,
+  Pencil,
+  Sparkles,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
@@ -20,15 +23,16 @@ import {
   getDayNumber,
   getEndDate,
   formatPrettyDate,
+  DEFAULT_HABITS,
 } from '../../services/rulesEngine';
 import { toggleTask } from '../../services/taskActions';
-import { UserProfile, ChallengeConfig } from '../../types';
+import { UserProfile, ChallengeConfig, HabitConfig } from '../../types';
 import { AddUserModal } from './AddUserModal';
 import { SUPABASE_SETUP_SQL } from '../../services/supabase';
 import { Card, CheckButton, Chip, Notice, ScreenTitle, SectionHeader, Sheet, Switch } from '../ui';
-import { TASK_ICONS } from '../common/taskMeta';
+import { TASK_ICONS, AVAILABLE_HABIT_ICONS, getTaskIcon } from '../common/taskMeta';
 
-type AdminTab = 'requests' | 'squad' | 'editday' | 'rules' | 'data';
+type AdminTab = 'requests' | 'squad' | 'habits' | 'editday' | 'rules' | 'data';
 
 interface AdminPanelScreenProps {
   onNavigateTab: (tab: string) => void;
@@ -110,6 +114,69 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
   const [dbMsg, setDbMsg] = useState<{ success?: boolean; text?: string } | null>(null);
   const [testingDb, setTestingDb] = useState(false);
 
+  // Habit management state
+  const [isHabitSheetOpen, setIsHabitSheetOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<Partial<HabitConfig> | null>(null);
+
+  const habitList: HabitConfig[] = form.habits && form.habits.length > 0 ? form.habits : DEFAULT_HABITS;
+
+  const handleOpenAddHabit = () => {
+    setEditingHabit({
+      id: '',
+      name: '',
+      description: '',
+      enabled: true,
+      required: true,
+      category: 'custom',
+      targetType: 'checkbox',
+      icon: 'Target',
+    });
+    setIsHabitSheetOpen(true);
+  };
+
+  const handleOpenEditHabit = (habit: HabitConfig) => {
+    setEditingHabit({ ...habit });
+    setIsHabitSheetOpen(true);
+  };
+
+  const handleSaveHabitModal = () => {
+    if (!editingHabit || !editingHabit.name?.trim()) return;
+    const current = [...habitList];
+    let updated: HabitConfig[];
+    if (editingHabit.id) {
+      updated = current.map(h => (h.id === editingHabit.id ? ({ ...h, ...editingHabit } as HabitConfig) : h));
+    } else {
+      const newHabit: HabitConfig = {
+        id: `custom_${Date.now()}`,
+        name: editingHabit.name.trim(),
+        description: editingHabit.description?.trim() || '',
+        enabled: editingHabit.enabled ?? true,
+        required: editingHabit.required ?? true,
+        category: 'custom',
+        targetType: editingHabit.targetType || 'checkbox',
+        targetValue: editingHabit.targetValue,
+        targetUnit: editingHabit.targetUnit,
+        icon: editingHabit.icon || 'Sparkles',
+      };
+      updated = [...current, newHabit];
+    }
+    patchForm({ habits: updated });
+    setIsHabitSheetOpen(false);
+    setEditingHabit(null);
+  };
+
+  const handleToggleHabitEnabled = (id: string, enabled: boolean) => {
+    const updated = habitList.map(h => (h.id === id ? { ...h, enabled } : h));
+    patchForm({ habits: updated });
+  };
+
+  const handleDeleteHabit = (id: string) => {
+    if (window.confirm('Delete this custom habit? Existing logs will no longer require it.')) {
+      const updated = habitList.filter(h => h.id !== id);
+      patchForm({ habits: updated });
+    }
+  };
+
   if (!isAdmin) {
     return (
       <Card className="text-center py-10 space-y-2">
@@ -151,6 +218,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
   const tabs: Array<{ id: AdminTab; label: string; badge?: number }> = [
     { id: 'requests', label: 'Requests', badge: pendingExceptions.length },
     { id: 'squad', label: 'Squad' },
+    { id: 'habits', label: 'Habits', badge: habitList.filter(h => h.category === 'custom').length || undefined },
     { id: 'editday', label: 'Edit a day' },
     { id: 'rules', label: 'Rules & dates' },
     { id: 'data', label: 'Database' },
@@ -238,11 +306,16 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                   <div className="flex-1 min-w-0">
                     <p className="text-[15px] font-semibold text-white truncate">{c.name}</p>
                     <p className="text-[13px] text-zinc-500 break-all">
-                      @{c.username} ·{' '}
-                      <span className={net > 0 ? 'text-emerald-400' : net < 0 ? 'text-rose-400' : ''}>
-                        {config.currencySymbol}
-                        {(bal?.currentDeposit ?? c.depositAmount ?? config.depositAmount).toLocaleString('en-IN')}
-                      </span>
+                      @{c.username}
+                      {config.penaltyEnabled !== false && (
+                        <>
+                          {' '}·{' '}
+                          <span className={net > 0 ? 'text-emerald-400' : net < 0 ? 'text-rose-400' : ''}>
+                            {config.currencySymbol}
+                            {(bal?.currentDeposit ?? c.depositAmount ?? config.depositAmount).toLocaleString('en-IN')}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
                   <button
@@ -275,6 +348,87 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
           <button onClick={() => setIsAddUserOpen(true)} className="btn-secondary w-full">
             <UserPlus className="w-4 h-4" /> Add challenger
           </button>
+        </div>
+      )}
+
+      {/* HABITS */}
+      {tab === 'habits' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[15px] font-semibold text-white">
+                Challenge Habits ({habitList.filter(h => h.enabled !== false).length} active)
+              </p>
+              <p className="text-[13px] text-zinc-400">Add, customize, enable or disable habits.</p>
+            </div>
+            <button onClick={handleOpenAddHabit} className="btn-primary btn-sm flex items-center gap-1.5">
+              <Plus className="w-4 h-4" /> Add Habit
+            </button>
+          </div>
+
+          <div className="card overflow-hidden divide-y divide-white/[0.05]">
+            {habitList.map(h => {
+              const IconComp = getTaskIcon(h.id, h.icon);
+              const isCustom = h.category === 'custom' || h.id.startsWith('custom_');
+              const isEnabled = h.enabled !== false;
+              return (
+                <div
+                  key={h.id}
+                  className={`flex items-center gap-3 px-4 py-3 transition ${
+                    isEnabled ? '' : 'opacity-50 bg-black/20'
+                  }`}
+                >
+                  <span
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      isEnabled ? 'bg-white/[0.07] text-white' : 'bg-white/[0.03] text-zinc-500'
+                    }`}
+                  >
+                    <IconComp className="w-5 h-5" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] font-semibold text-white leading-snug">{h.name}</span>
+                      {isCustom ? <Chip tone="violet">Custom</Chip> : <Chip tone="neutral">Core</Chip>}
+                      {h.required !== false ? <Chip tone="rose">Required</Chip> : <Chip tone="blue">Optional</Chip>}
+                      {!isEnabled && <Chip tone="neutral">Disabled</Chip>}
+                    </div>
+                    <p className="text-[13px] text-zinc-400 truncate">
+                      {h.description || 'No description'}
+                    </p>
+                    {h.targetType === 'number' && h.targetValue && (
+                      <p className="text-[12px] text-zinc-500">
+                        Target: {h.targetValue} {h.targetUnit || 'units'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Switch
+                      tone="emerald"
+                      label={`Toggle ${h.name}`}
+                      checked={isEnabled}
+                      onChange={checked => handleToggleHabitEnabled(h.id, checked)}
+                    />
+                    <button
+                      onClick={() => handleOpenEditHabit(h)}
+                      aria-label={`Edit ${h.name}`}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 active:bg-white/[0.06]"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    {isCustom && (
+                      <button
+                        onClick={() => handleDeleteHabit(h.id)}
+                        aria-label={`Delete ${h.name}`}
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 active:bg-rose-500/10 active:text-rose-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -321,7 +475,7 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
             </div>
             <div className="divide-y divide-white/[0.05]">
               {items.map(item => {
-                const Icon = TASK_ICONS[item.id];
+                const Icon = getTaskIcon(item.id);
                 return (
                   <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
                     <Icon className="w-4 h-4 text-zinc-500 shrink-0" />
@@ -372,6 +526,34 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
       {tab === 'rules' && (
         <div className="space-y-4">
           <section>
+            <SectionHeader title="Peer Penalties & Financial Stakes" />
+            <Card className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-[15px] font-semibold text-white">Peer Penalty Redistribution</p>
+                  <p className="text-[13px] text-zinc-400">
+                    When active, missed days incur penalties redistributed among successful challengers. When disabled, all money/deposit features are completely hidden across the app for pure habit tracking.
+                  </p>
+                </div>
+                <Switch
+                  tone="emerald"
+                  checked={form.penaltyEnabled !== false}
+                  onChange={v => patchForm({ penaltyEnabled: v })}
+                  label="Peer penalty enabled"
+                />
+              </div>
+              {form.penaltyEnabled !== false && (
+                <NumberField
+                  label="Deposit per person"
+                  suffix={config.currencySymbol}
+                  value={form.depositAmount}
+                  onChange={n => patchForm({ depositAmount: n })}
+                />
+              )}
+            </Card>
+          </section>
+
+          <section>
             <SectionHeader title="Schedule" />
             <Card className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -385,12 +567,6 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                 Ends <span className="font-semibold text-white">{formEndDate ? formatPrettyDate(formEndDate, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
                 <span className="block text-[12px] text-zinc-500 mt-0.5">Worked out from the start date and duration.</span>
               </div>
-              <NumberField
-                label={`Deposit per person`}
-                suffix={config.currencySymbol}
-                value={form.depositAmount}
-                onChange={n => patchForm({ depositAmount: n })}
-              />
             </Card>
           </section>
 
@@ -469,7 +645,12 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
               </div>
             </div>
           </section>
+        </div>
+      )}
 
+      {/* STICKY SAVE BAR FOR RULES & HABITS */}
+      {(tab === 'rules' || tab === 'habits') && (
+        <div className="space-y-3">
           {saveMsg && (
             <Notice tone={saveMsg.ok ? 'emerald' : 'amber'} icon={saveMsg.ok ? CircleCheck : ShieldAlert} title={saveMsg.text} />
           )}
@@ -600,6 +781,164 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
           placeholder="At least 6 characters"
           autoCapitalize="off"
         />
+      </Sheet>
+
+      <Sheet
+        open={isHabitSheetOpen}
+        onClose={() => {
+          setIsHabitSheetOpen(false);
+          setEditingHabit(null);
+        }}
+        title={editingHabit?.id ? `Edit ${editingHabit.name || 'Habit'}` : 'Add New Habit'}
+        subtitle={editingHabit?.category === 'custom' || !editingHabit?.id ? 'Custom Challenge Habit' : 'Core Habit'}
+        footer={
+          <div className="flex gap-2 w-full">
+            <button
+              type="button"
+              className="btn-secondary flex-1"
+              onClick={() => {
+                setIsHabitSheetOpen(false);
+                setEditingHabit(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary flex-1"
+              disabled={!editingHabit?.name?.trim()}
+              onClick={handleSaveHabitModal}
+            >
+              Save Habit
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="field-label">Habit Name *</label>
+            <input
+              className="input"
+              value={editingHabit?.name || ''}
+              onChange={e => setEditingHabit(h => ({ ...h, name: e.target.value }))}
+              placeholder="e.g. Cold Shower, Meditate 10m"
+            />
+          </div>
+
+          <div>
+            <label className="field-label">Description / Instructions</label>
+            <textarea
+              rows={2}
+              className="input"
+              value={editingHabit?.description || ''}
+              onChange={e => setEditingHabit(h => ({ ...h, description: e.target.value }))}
+              placeholder="Short instructions for challengers"
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl bg-ink-850 border border-white/[0.05]">
+            <div>
+              <p className="text-sm font-semibold text-white">Required for daily pass</p>
+              <p className="text-[12px] text-zinc-400">If disabled, this habit is tracked as optional</p>
+            </div>
+            <Switch
+              tone="rose"
+              label="Habit required"
+              checked={editingHabit?.required !== false}
+              onChange={req => setEditingHabit(h => ({ ...h, required: req }))}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl bg-ink-850 border border-white/[0.05]">
+            <div>
+              <p className="text-sm font-semibold text-white">Active in challenge</p>
+              <p className="text-[12px] text-zinc-400">Turn off to temporarily hide from the daily checklist</p>
+            </div>
+            <Switch
+              tone="emerald"
+              label="Habit enabled"
+              checked={editingHabit?.enabled !== false}
+              onChange={en => setEditingHabit(h => ({ ...h, enabled: en }))}
+            />
+          </div>
+
+          <div>
+            <label className="field-label">Tracking Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingHabit(h => ({ ...h, targetType: 'checkbox' }))}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold border ${
+                  editingHabit?.targetType !== 'number'
+                    ? 'bg-white text-ink-950 border-white'
+                    : 'bg-ink-850 text-zinc-400 border-white/[0.08]'
+                }`}
+              >
+                Yes / No Checkbox
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingHabit(h => ({ ...h, targetType: 'number' }))}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold border ${
+                  editingHabit?.targetType === 'number'
+                    ? 'bg-white text-ink-950 border-white'
+                    : 'bg-ink-850 text-zinc-400 border-white/[0.08]'
+                }`}
+              >
+                Numeric Target
+              </button>
+            </div>
+          </div>
+
+          {editingHabit?.targetType === 'number' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Target Number</label>
+                <input
+                  type="number"
+                  className="input"
+                  value={editingHabit?.targetValue ?? ''}
+                  onChange={e => setEditingHabit(h => ({ ...h, targetValue: parseFloat(e.target.value) || 0 }))}
+                  placeholder="e.g. 10"
+                />
+              </div>
+              <div>
+                <label className="field-label">Unit</label>
+                <input
+                  className="input"
+                  value={editingHabit?.targetUnit || ''}
+                  onChange={e => setEditingHabit(h => ({ ...h, targetUnit: e.target.value }))}
+                  placeholder="e.g. mins, reps, ml"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="field-label">Choose Icon</label>
+            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1">
+              {AVAILABLE_HABIT_ICONS.map(ic => {
+                const IconComp = ic.icon;
+                const isSelected = editingHabit?.icon === ic.id;
+                return (
+                  <button
+                    key={ic.id}
+                    type="button"
+                    onClick={() => setEditingHabit(h => ({ ...h, icon: ic.id }))}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition ${
+                      isSelected
+                        ? 'border-emerald-400 bg-emerald-500/10 text-emerald-400'
+                        : 'border-white/[0.06] bg-ink-850 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <IconComp className="w-5 h-5 mb-1" />
+                    <span className="text-[10px] truncate max-w-full">{ic.label.split('/')[0]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </Sheet>
 
       {previewProofUrl && (

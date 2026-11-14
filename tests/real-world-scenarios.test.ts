@@ -607,3 +607,142 @@ describe('Changing the start date', () => {
     assert.strictEqual(getChallengePhase('2026-11-11', cfg).phase, 'before');
   });
 });
+
+describe('Penalty logic enabled vs disabled', () => {
+  const users: UserProfile[] = [
+    { id: 'user_1', username: 'vedant', name: 'Vedant', avatar: '🦁', color: 'orange', role: 'challenger', depositAmount: 2000 },
+    { id: 'user_2', username: 'vedansh', name: 'Vedansh', avatar: '🐺', color: 'blue', role: 'challenger', depositAmount: 2000 },
+    { id: 'user_3', username: 'aryaman', name: 'Aryaman', avatar: '🦅', color: 'purple', role: 'challenger', depositAmount: 2000 },
+  ];
+
+  it('penaltyEnabled: true recalculates peer penalty transactions', () => {
+    const logs = {
+      user_1: { '2026-11-11': completeAllTasks(createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_1'), DEFAULT_CONFIG) },
+      user_2: { '2026-11-11': createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_2') }, // missed
+      user_3: { '2026-11-11': completeAllTasks(createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_3'), DEFAULT_CONFIG) },
+    };
+    const ledger = calculateSquadDepositLedger(logs, users, { ...DEFAULT_CONFIG, penaltyEnabled: true }, '2026-11-11');
+    assert.strictEqual(ledger.balances['user_2'].netChange, -200);
+    assert.strictEqual(ledger.balances['user_1'].netChange, 100);
+    assert.strictEqual(ledger.balances['user_3'].netChange, 100);
+    assert.strictEqual(ledger.transactions.length > 0, true);
+  });
+
+  it('penaltyEnabled: false completely disables penalty calculations and returns 0 pool', () => {
+    const logs = {
+      user_1: { '2026-11-11': completeAllTasks(createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_1'), DEFAULT_CONFIG) },
+      user_2: { '2026-11-11': createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_2') }, // missed
+      user_3: { '2026-11-11': completeAllTasks(createDefaultLog('2026-11-11', DEFAULT_CONFIG, 'user_3'), DEFAULT_CONFIG) },
+    };
+    const ledger = calculateSquadDepositLedger(logs, users, { ...DEFAULT_CONFIG, penaltyEnabled: false }, '2026-11-11');
+    assert.strictEqual(ledger.totalPool, 0);
+    assert.strictEqual(ledger.transactions.length, 0);
+    assert.strictEqual(ledger.balances['user_2'].netChange, 0);
+    assert.strictEqual(ledger.balances['user_1'].netChange, 0);
+    assert.strictEqual(ledger.balances['user_3'].netChange, 0);
+  });
+});
+
+describe('Dynamic Habit Management (Custom Habits & Disabling Habits)', () => {
+  it('disabling a habit excludes it from validation and total count', () => {
+    const baseConfig = normalizeConfig(DEFAULT_CONFIG);
+    const habitsWithDisabled = (baseConfig.habits || []).map(h => (h.id === 'noMasturbation' ? { ...h, enabled: false } : h));
+    const config = { ...baseConfig, habits: habitsWithDisabled };
+
+    const log = createDefaultLog('2026-11-11', config, 'user_1');
+    const validation = validateDayTasks(log, config);
+
+    assert.strictEqual(validation.totalCount, 10);
+    assert.strictEqual(validation.items.some(i => i.id === 'noMasturbation'), false);
+  });
+
+  it('adding a required custom habit increases total count and requires completion for allCompleted', () => {
+    const baseConfig = normalizeConfig(DEFAULT_CONFIG);
+    const customHabit = {
+      id: 'custom_cold_shower',
+      name: 'Cold Shower',
+      description: '3 mins ice cold water',
+      enabled: true,
+      required: true,
+      category: 'custom' as const,
+      targetType: 'checkbox' as const,
+    };
+    const config = { ...baseConfig, habits: [...(baseConfig.habits || []), customHabit] };
+
+    // Log with standard tasks completed, but custom habit not done yet
+    let log = completeAllTasks(createDefaultLog('2026-11-11', config, 'user_1'), config);
+    let val = validateDayTasks(log, config);
+    assert.strictEqual(val.totalCount, 12);
+    assert.strictEqual(val.allCompleted, false);
+    assert.strictEqual(val.failedNames.includes('Cold Shower'), true);
+
+    // Now complete the custom habit
+    log = {
+      ...log,
+      tasks: {
+        ...log.tasks,
+        custom: {
+          custom_cold_shower: { completed: true },
+        },
+      },
+    };
+    val = validateDayTasks(log, config);
+    assert.strictEqual(val.allCompleted, true);
+    assert.strictEqual(val.completedCount, 12);
+  });
+
+  it('numeric custom habit requires meeting or exceeding targetValue', () => {
+    const baseConfig = normalizeConfig(DEFAULT_CONFIG);
+    const customNumericHabit = {
+      id: 'custom_meditation',
+      name: 'Meditation',
+      description: 'Mindfulness session',
+      enabled: true,
+      required: true,
+      category: 'custom' as const,
+      targetType: 'number' as const,
+      targetValue: 15,
+      targetUnit: 'mins',
+    };
+    const config = { ...baseConfig, habits: [...(baseConfig.habits || []), customNumericHabit] };
+
+    let log = completeAllTasks(createDefaultLog('2026-11-11', config, 'user_1'), config);
+    log = {
+      ...log,
+      tasks: {
+        ...log.tasks,
+        custom: {
+          custom_meditation: { completed: false, value: 10 },
+        },
+      },
+    };
+    let val = validateDayTasks(log, config);
+    assert.strictEqual(val.allCompleted, false);
+
+    log.tasks.custom!.custom_meditation = { completed: true, value: 15 };
+    val = validateDayTasks(log, config);
+    assert.strictEqual(val.allCompleted, true);
+  });
+
+  it('optional habit does not fail the day if not completed', () => {
+    const baseConfig = normalizeConfig(DEFAULT_CONFIG);
+    const optionalHabit = {
+      id: 'custom_journal',
+      name: 'Gratitude Journal',
+      description: 'Write 3 things',
+      enabled: true,
+      required: false,
+      category: 'custom' as const,
+      targetType: 'checkbox' as const,
+    };
+    const config = { ...baseConfig, habits: [...(baseConfig.habits || []), optionalHabit] };
+
+    const log = completeAllTasks(createDefaultLog('2026-11-11', config, 'user_1'), config);
+    const val = validateDayTasks(log, config);
+    // Standard 11 tasks are done, optional habit is not done
+    assert.strictEqual(val.allCompleted, true);
+    assert.strictEqual(val.completedCount, 11);
+    assert.strictEqual(val.totalCount, 12);
+    assert.strictEqual(val.failedNames.length, 0); // optional habit does not appear in failedNames
+  });
+});

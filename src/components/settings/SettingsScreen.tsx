@@ -88,7 +88,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
         <div className="min-w-0 flex-1">
           <p className="text-lg font-bold text-white truncate">{isRefereeSelf ? 'Referee' : currentUser?.name}</p>
           <p className="text-[13px] text-zinc-500 truncate">@{currentUser?.username || currentUser?.id}</p>
-          {!isRefereeSelf && (
+          {!isRefereeSelf && config.penaltyEnabled !== false && (
             <p className="text-[13px] text-emerald-400 mt-0.5 tabular">
               {config.currencySymbol}
               {(me?.currentDeposit ?? currentUser?.depositAmount ?? config.depositAmount).toLocaleString('en-IN')} deposit

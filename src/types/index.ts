@@ -27,6 +27,11 @@ export interface HabitConfig {
   description: string;
   enabled: boolean;
   required: boolean;
+  category?: 'core' | 'custom';
+  targetType?: 'checkbox' | 'number' | 'text';
+  targetValue?: number;
+  targetUnit?: string;
+  icon?: string;
 }
 
 export interface ChallengeConfig {
@@ -35,6 +40,8 @@ export interface ChallengeConfig {
   endDate: string; // YYYY-MM-DD (e.g. '2027-01-24')
   depositAmount: number; // 2000 per user
   currencySymbol: string; // '₹'
+  penaltyEnabled: boolean; // true = peer penalty & redistribution active; false = completely disabled and hidden
+  habits?: HabitConfig[]; // list of active challenge habits (core + custom)
   wakeUpTarget: string; // '06:00'
   wakeUpTravelTarget: string; // '08:00'
   wakeUpGraceMinutes: number; // check-in buffer after the target (e.g. 10 -> 6:10 AM)
@@ -152,6 +159,12 @@ export interface TaskState {
     minutes: number;
     notes?: string;
   };
+  custom?: Record<string, {
+    completed: boolean;
+    value?: number | string;
+    notes?: string;
+  }>;
+  [key: string]: any;
 }
 
 export interface SportInfo {

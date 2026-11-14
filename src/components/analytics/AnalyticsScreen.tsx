@@ -96,44 +96,46 @@ export const AnalyticsScreen: React.FC = () => {
           </div>
 
           {/* Deposit */}
-          <Card>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[13px] text-zinc-500">Deposit balance</p>
-                <p className="text-3xl font-bold text-white tabular mt-0.5">
-                  {config.currencySymbol}
-                  {(balance?.currentDeposit ?? config.depositAmount).toLocaleString('en-IN')}
-                </p>
-              </div>
-              <span
-                className={`chip mt-1 ${
-                  net > 0 ? 'bg-emerald-500/15 text-emerald-300' : net < 0 ? 'bg-rose-500/15 text-rose-300' : 'bg-white/[0.06] text-zinc-300'
-                }`}
-              >
-                {net > 0 ? `+${config.currencySymbol}${net}` : net < 0 ? `−${config.currencySymbol}${Math.abs(net)}` : 'No change'}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-              {[
-                ['Pledged', `${config.currencySymbol}${(balance?.initialDeposit ?? config.depositAmount).toLocaleString('en-IN')}`, 'text-zinc-200'],
-                [
-                  'Penalties',
-                  balance?.penaltiesPaid ? `−${config.currencySymbol}${balance.penaltiesPaid}` : `${config.currencySymbol}0`,
-                  balance?.penaltiesPaid ? 'text-rose-300' : 'text-zinc-400',
-                ],
-                [
-                  'Won',
-                  balance?.bountiesEarned ? `+${config.currencySymbol}${balance.bountiesEarned}` : `${config.currencySymbol}0`,
-                  balance?.bountiesEarned ? 'text-emerald-300' : 'text-zinc-400',
-                ],
-              ].map(([label, value, color]) => (
-                <div key={label} className="rounded-xl bg-white/[0.04] py-2.5">
-                  <p className={`text-[15px] font-semibold tabular ${color}`}>{value}</p>
-                  <p className="text-[12px] text-zinc-500">{label}</p>
+          {config.penaltyEnabled !== false && (
+            <Card>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[13px] text-zinc-500">Deposit balance</p>
+                  <p className="text-3xl font-bold text-white tabular mt-0.5">
+                    {config.currencySymbol}
+                    {(balance?.currentDeposit ?? config.depositAmount).toLocaleString('en-IN')}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </Card>
+                <span
+                  className={`chip mt-1 ${
+                    net > 0 ? 'bg-emerald-500/15 text-emerald-300' : net < 0 ? 'bg-rose-500/15 text-rose-300' : 'bg-white/[0.06] text-zinc-300'
+                  }`}
+                >
+                  {net > 0 ? `+${config.currencySymbol}${net}` : net < 0 ? `−${config.currencySymbol}${Math.abs(net)}` : 'No change'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                {[
+                  ['Pledged', `${config.currencySymbol}${(balance?.initialDeposit ?? config.depositAmount).toLocaleString('en-IN')}`, 'text-zinc-200'],
+                  [
+                    'Penalties',
+                    balance?.penaltiesPaid ? `−${config.currencySymbol}${balance.penaltiesPaid}` : `${config.currencySymbol}0`,
+                    balance?.penaltiesPaid ? 'text-rose-300' : 'text-zinc-400',
+                  ],
+                  [
+                    'Won',
+                    balance?.bountiesEarned ? `+${config.currencySymbol}${balance.bountiesEarned}` : `${config.currencySymbol}0`,
+                    balance?.bountiesEarned ? 'text-emerald-300' : 'text-zinc-400',
+                  ],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="rounded-xl bg-white/[0.04] py-2.5">
+                    <p className={`text-[15px] font-semibold tabular ${color}`}>{value}</p>
+                    <p className="text-[12px] text-zinc-500">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* Habit consistency */}
           <section>
@@ -272,47 +274,49 @@ export const AnalyticsScreen: React.FC = () => {
       )}
 
       {/* Squad ledger */}
-      <section>
-        <SectionHeader
-          title="Squad money moves"
-          action={
-            <span className="text-[12px] text-zinc-500 tabular">
-              Pool {config.currencySymbol}
-              {depositLedger.totalPool.toLocaleString('en-IN')}
-            </span>
-          }
-        />
-        {depositLedger.transactions.length === 0 ? (
-          <Card className="text-center py-6">
-            <p className="text-sm text-zinc-400">No penalties yet. Everyone's on track.</p>
-          </Card>
-        ) : (
-          <div className="card divide-y divide-white/[0.05] overflow-hidden">
-            {depositLedger.transactions.map((tx, i) => (
-              <div key={i} className="px-4 py-3">
-                <div className="flex items-center justify-between text-[13px]">
-                  <span className="font-semibold text-white">Day {tx.dayNumber}</span>
-                  <span className="text-zinc-500">{formatPrettyDate(tx.date)}</span>
+      {config.penaltyEnabled !== false && (
+        <section>
+          <SectionHeader
+            title="Squad money moves"
+            action={
+              <span className="text-[12px] text-zinc-500 tabular">
+                Pool {config.currencySymbol}
+                {depositLedger.totalPool.toLocaleString('en-IN')}
+              </span>
+            }
+          />
+          {depositLedger.transactions.length === 0 ? (
+            <Card className="text-center py-6">
+              <p className="text-sm text-zinc-400">No penalties yet. Everyone's on track.</p>
+            </Card>
+          ) : (
+            <div className="card divide-y divide-white/[0.05] overflow-hidden">
+              {depositLedger.transactions.map((tx, i) => (
+                <div key={i} className="px-4 py-3">
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="font-semibold text-white">Day {tx.dayNumber}</span>
+                    <span className="text-zinc-500">{formatPrettyDate(tx.date)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5 text-[13px] flex-wrap">
+                    <span className="text-rose-300">
+                      {tx.missers.map(m => `${m.avatar} ${m.name}`).join(', ')} −{config.currencySymbol}
+                      {tx.deductedPerMisser}
+                    </span>
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-zinc-600" />
+                    <span className="text-emerald-300">
+                      {tx.survivors.map(s => `${s.avatar} ${s.name}`).join(', ')} +{config.currencySymbol}
+                      {tx.awardedPerSurvivor}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-1.5 text-[13px] flex-wrap">
-                  <span className="text-rose-300">
-                    {tx.missers.map(m => `${m.avatar} ${m.name}`).join(', ')} −{config.currencySymbol}
-                    {tx.deductedPerMisser}
-                  </span>
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-zinc-600" />
-                  <span className="text-emerald-300">
-                    {tx.survivors.map(s => `${s.avatar} ${s.name}`).join(', ')} +{config.currencySymbol}
-                    {tx.awardedPerSurvivor}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <p className="text-[12px] text-zinc-500 leading-relaxed mt-2 px-1">
-          Miss any habit: −{config.currencySymbol}200, shared among those who completed the day. If everyone misses, nothing moves.
-        </p>
-      </section>
+              ))}
+            </div>
+          )}
+          <p className="text-[12px] text-zinc-500 leading-relaxed mt-2 px-1">
+            Miss any habit: −{config.currencySymbol}200, shared among those who completed the day. If everyone misses, nothing moves.
+          </p>
+        </section>
+      )}
 
       <PhotoGalleryModal isOpen={galleryOpen} onClose={() => setGalleryOpen(false)} />
     </div>

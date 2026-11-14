@@ -16,7 +16,7 @@ export function isLateWakeUp(log: DailyLog, config: ChallengeConfig): boolean {
  * One-tap toggle for a habit. Fills in the minimum values a habit needs to count as done
  * (or clears them when unticking), so the quick checkbox and the detailed form agree.
  */
-export function toggleTask(log: DailyLog, taskId: keyof TaskState, config: ChallengeConfig): DailyLog {
+export function toggleTask(log: DailyLog, taskId: string, config: ChallengeConfig): DailyLog {
   const tasks = { ...log.tasks };
   const isDone = validateDayTasks(log, config).items.find(i => i.id === taskId)?.isCompleted ?? false;
   const next = !isDone;
@@ -84,9 +84,38 @@ export function toggleTask(log: DailyLog, taskId: keyof TaskState, config: Chall
       if (next && !tasks.progressPhoto.photoUrl) return log;
       tasks.progressPhoto = { ...tasks.progressPhoto, completed: next };
       break;
-    default:
+    case 'noMasturbation':
+      tasks.noMasturbation = { ...tasks.noMasturbation, completed: next };
+      break;
+    case 'noSmokingAlcohol':
+      tasks.noSmokingAlcohol = { ...tasks.noSmokingAlcohol, completed: next };
+      break;
+    case 'learning':
+      tasks.learning = { ...tasks.learning, completed: next };
+      break;
+    default: {
+      const custom = { ...(tasks.custom || {}) };
+      const current = custom[taskId] || { completed: false };
+      custom[taskId] = { ...current, completed: next };
+      tasks.custom = custom;
       (tasks as any)[taskId] = { ...(tasks as any)[taskId], completed: next };
+      break;
+    }
   }
 
+  return { ...log, tasks };
+}
+
+/** Update custom habit value or notes */
+export function updateCustomTask(
+  log: DailyLog,
+  taskId: string,
+  updates: { completed?: boolean; value?: number | string; notes?: string }
+): DailyLog {
+  const tasks = { ...log.tasks };
+  const custom = { ...(tasks.custom || {}) };
+  const current = custom[taskId] || { completed: false };
+  custom[taskId] = { ...current, ...updates };
+  tasks.custom = custom;
   return { ...log, tasks };
 }
