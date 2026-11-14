@@ -94,11 +94,13 @@ export function toggleTask(log: DailyLog, taskId: string, config: ChallengeConfi
       tasks.learning = { ...tasks.learning, completed: next };
       break;
     default: {
+      // Custom habit: its state lives only in tasks.custom
       const custom = { ...(tasks.custom || {}) };
       const current = custom[taskId] || { completed: false };
       custom[taskId] = { ...current, completed: next };
       tasks.custom = custom;
-      (tasks as any)[taskId] = { ...(tasks as any)[taskId], completed: next };
+      // Old builds also mirrored the flag on a top-level key – clear it so it can't disagree
+      if ((tasks as any)[taskId]) delete (tasks as any)[taskId];
       break;
     }
   }

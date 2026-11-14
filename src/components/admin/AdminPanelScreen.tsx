@@ -16,26 +16,20 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
-import {
-  formatDate,
-  createDefaultLog,
-  validateDayTasks,
-  getDayNumber,
-  getEndDate,
-  formatPrettyDate,
-  DEFAULT_HABITS,
-} from '../../services/rulesEngine';
-import { toggleTask } from '../../services/taskActions';
+import { formatDate, getDayNumber, getEndDate, formatPrettyDate, DEFAULT_HABITS } from '../../services/rulesEngine';
 import { UserProfile, ChallengeConfig, HabitConfig } from '../../types';
 import { AddUserModal } from './AddUserModal';
+import { AdminDayEditor } from './AdminDayEditor';
 import { SUPABASE_SETUP_SQL } from '../../services/supabase';
-import { Card, CheckButton, Chip, Notice, ScreenTitle, SectionHeader, Sheet, Switch } from '../ui';
-import { TASK_ICONS, AVAILABLE_HABIT_ICONS, getTaskIcon } from '../common/taskMeta';
+import { Card, Chip, Notice, ScreenTitle, SectionHeader, Sheet, Switch } from '../ui';
+import { AVAILABLE_HABIT_ICONS, getTaskIcon } from '../common/taskMeta';
 
 type AdminTab = 'requests' | 'squad' | 'habits' | 'editday' | 'rules' | 'data';
 
 interface AdminPanelScreenProps {
   onNavigateTab: (tab: string) => void;
+  /** Open Edit day for this challenger + date (sent from the Checklist / Calendar / Today screens) */
+  dayTarget?: { userId: string; date: string; nonce: number };
 }
 
 /** PDF proofs come back as data: URLs offline, but as https://…/file.pdf from Supabase Storage. */
@@ -65,30 +59,33 @@ const NumberField: React.FC<{ label: string; value: number; onChange: (n: number
   </div>
 );
 
-export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTab }) => {
+export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ dayTarget }) => {
   const {
     isAdmin,
     users,
-    allUsersLogs,
     pendingExceptions,
     approveException,
     rejectException,
-    adminUpdateLog,
     adminDeleteUser,
     adminResetPassword,
     config,
     updateConfig,
-    setCurrentUserId,
-    setCurrentDate,
     dbSettings,
     updateDbSettings,
     depositLedger,
   } = useChallenge();
 
   const challengers = users.filter(u => u.role !== 'admin');
-  const [tab, setTab] = useState<AdminTab>(pendingExceptions.length > 0 ? 'requests' : 'squad');
-  const [selectedUserId, setSelectedUserId] = useState<string>(challengers[0]?.id || 'user_1');
-  const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
+  const [tab, setTab] = useState<AdminTab>(dayTarget ? 'editday' : pendingExceptions.length > 0 ? 'requests' : 'editday');
+  const [selectedUserId, setSelectedUserId] = useState<string>(dayTarget?.userId || challengers[0]?.id || 'user_1');
+  const [selectedDate, setSelectedDate] = useState<string>(dayTarget?.date || formatDate(new Date()));
+  // "Edit" pressed on another screen: jump straight to that person's day
+  useEffect(() => {
+    if (!dayTarget) return;
+    setTab('editday');
+    setSelectedUserId(dayTarget.userId);
+    setSelectedDate(dayTarget.date);
+  }, [dayTarget?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [resettingUser, setResettingUser] = useState<UserProfile | null>(null);
   const [newPasswordVal, setNewPasswordVal] = useState('');
@@ -114,11 +111,22 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
   const [dbMsg, setDbMsg] = useState<{ success?: boolean; text?: string } | null>(null);
   const [testingDb, setTestingDb] = useState(false);
 
-  // Habit management state
+  // Habit management - the ONLY place habits are defined. Every change is saved straight
+  // away (no separate "Save" step that was easy to miss, losing a newly added habit).
   const [isHabitSheetOpen, setIsHabitSheetOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Partial<HabitConfig> | null>(null);
+  const [habitMsg, setHabitMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [habitSaving, setHabitSaving] = useState(false);
 
-  const habitList: HabitConfig[] = form.habits && form.habits.length > 0 ? form.habits : DEFAULT_HABITS;
+  const habitList: HabitConfig[] = config.habits && config.habits.length > 0 ? config.habits : DEFAULT_HABITS;
+
+  const saveHabits = async (updated: HabitConfig[], doneText: string) => {
+    setHabitSaving(true);
+    setHabitMsg(null);
+    const res = await updateConfig({ habits: updated });
+    setHabitSaving(false);
+    setHabitMsg(res.success ? { ok: true, text: doneText } : { ok: false, text: `Saved on this device only. ${res.message || ''}` });
+  };
 
   const handleOpenAddHabit = () => {
     setEditingHabit({
@@ -139,16 +147,21 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
     setIsHabitSheetOpen(true);
   };
 
-  const handleSaveHabitModal = () => {
+  const handleSaveHabitModal = async () => {
     if (!editingHabit || !editingHabit.name?.trim()) return;
     const current = [...habitList];
     let updated: HabitConfig[];
+    const name = editingHabit.name.trim();
     if (editingHabit.id) {
-      updated = current.map(h => (h.id === editingHabit.id ? ({ ...h, ...editingHabit } as HabitConfig) : h));
+      updated = current.map(h =>
+        h.id === editingHabit.id
+          ? ({ ...h, ...editingHabit, name, description: editingHabit.description?.trim() || '' } as HabitConfig)
+          : h
+      );
     } else {
       const newHabit: HabitConfig = {
         id: `custom_${Date.now()}`,
-        name: editingHabit.name.trim(),
+        name,
         description: editingHabit.description?.trim() || '',
         enabled: editingHabit.enabled ?? true,
         required: editingHabit.required ?? true,
@@ -160,20 +173,21 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
       };
       updated = [...current, newHabit];
     }
-    patchForm({ habits: updated });
     setIsHabitSheetOpen(false);
     setEditingHabit(null);
+    await saveHabits(updated, editingHabit.id ? `"${name}" updated.` : `"${name}" added - it's on everyone's checklist now.`);
   };
 
   const handleToggleHabitEnabled = (id: string, enabled: boolean) => {
-    const updated = habitList.map(h => (h.id === id ? { ...h, enabled } : h));
-    patchForm({ habits: updated });
+    const h = habitList.find(x => x.id === id);
+    const updated = habitList.map(x => (x.id === id ? { ...x, enabled } : x));
+    saveHabits(updated, `"${h?.name || 'Habit'}" ${enabled ? 'switched on' : 'switched off'}.`);
   };
 
   const handleDeleteHabit = (id: string) => {
-    if (window.confirm('Delete this custom habit? Existing logs will no longer require it.')) {
-      const updated = habitList.filter(h => h.id !== id);
-      patchForm({ habits: updated });
+    const h = habitList.find(x => x.id === id);
+    if (window.confirm(`Delete "${h?.name || 'this habit'}"? It disappears from every checklist. Past ticks stay in the logs.`)) {
+      saveHabits(habitList.filter(x => x.id !== id), `"${h?.name || 'Habit'}" deleted.`);
     }
   };
 
@@ -187,12 +201,6 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
     );
   }
 
-  const targetUser = challengers.find(c => c.id === selectedUserId) || challengers[0];
-  // Header and edits must agree on WHO is being edited (selected user may have been removed)
-  const editUserId = targetUser?.id || selectedUserId;
-  const targetLog = (allUsersLogs[editUserId] || {})[selectedDate] || createDefaultLog(selectedDate, config, editUserId);
-  const { items, completedCount, totalCount } = validateDayTasks(targetLog, config);
-  const targetDayNum = getDayNumber(selectedDate, config.startDate);
   const formEndDate = form.startDate ? getEndDate(form.startDate, form.durationDays || 1) : '';
 
   const handleSaveRules = async () => {
@@ -205,7 +213,9 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
       return;
     }
     setSaving(true);
-    const res = await updateConfig(form);
+    // Habits are saved from the Habits tab - never overwrite them with this form's copy
+    const { habits: _habits, ...rules } = form;
+    const res = await updateConfig(rules);
     setSaving(false);
     setDirty(false);
     setSaveMsg(
@@ -217,9 +227,9 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
 
   const tabs: Array<{ id: AdminTab; label: string; badge?: number }> = [
     { id: 'requests', label: 'Requests', badge: pendingExceptions.length },
+    { id: 'editday', label: 'Edit day' },
+    { id: 'habits', label: 'Habits' },
     { id: 'squad', label: 'Squad' },
-    { id: 'habits', label: 'Habits', badge: habitList.filter(h => h.category === 'custom').length || undefined },
-    { id: 'editday', label: 'Edit a day' },
     { id: 'rules', label: 'Rules & dates' },
     { id: 'data', label: 'Database' },
   ];
@@ -359,12 +369,18 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
               <p className="text-[15px] font-semibold text-white">
                 Challenge Habits ({habitList.filter(h => h.enabled !== false).length} active)
               </p>
-              <p className="text-[13px] text-zinc-400">Add, customize, enable or disable habits.</p>
+              <p className="text-[13px] text-zinc-400">
+                {habitSaving ? 'Saving…' : 'Changes save instantly and apply to every checklist.'}
+              </p>
             </div>
             <button onClick={handleOpenAddHabit} className="btn-primary btn-sm flex items-center gap-1.5">
               <Plus className="w-4 h-4" /> Add Habit
             </button>
           </div>
+
+          {habitMsg && (
+            <Notice tone={habitMsg.ok ? 'emerald' : 'amber'} icon={habitMsg.ok ? CircleCheck : ShieldAlert} title={habitMsg.text} />
+          )}
 
           <div className="card overflow-hidden divide-y divide-white/[0.05]">
             {habitList.map(h => {
@@ -432,94 +448,15 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
         </div>
       )}
 
-      {/* EDIT A DAY */}
+      {/* EDIT DAY - the single place the referee edits a challenger's day */}
       {tab === 'editday' && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="field-label">Challenger</label>
-              <select value={editUserId} onChange={e => setSelectedUserId(e.target.value)} className="input">
-                {challengers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.avatar} {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="field-label">Date</label>
-              <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="input" />
-            </div>
-          </div>
-
-          <Card padded={false} className="overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
-              <div>
-                <p className="text-[15px] font-semibold text-white">
-                  {targetUser?.name} · Day {targetDayNum}
-                </p>
-                <p className="text-[13px] text-zinc-500">
-                  {completedCount}/{totalCount} done · {formatPrettyDate(selectedDate)}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setCurrentUserId(editUserId);
-                  setCurrentDate(selectedDate);
-                  onNavigateTab('tracker');
-                }}
-                className="btn-secondary btn-sm"
-              >
-                Open
-              </button>
-            </div>
-            <div className="divide-y divide-white/[0.05]">
-              {items.map(item => {
-                const Icon = getTaskIcon(item.id);
-                return (
-                  <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
-                    <Icon className="w-4 h-4 text-zinc-500 shrink-0" />
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm text-zinc-200">{item.title}</span>
-                      {item.id === 'progressPhoto' && !targetLog.tasks.progressPhoto.photoUrl && (
-                        <span className="block text-[12px] text-zinc-500">Upload via “Open” to complete</span>
-                      )}
-                    </span>
-                    <CheckButton
-                      checked={item.isCompleted}
-                      disabled={item.id === 'progressPhoto' && !targetLog.tasks.progressPhoto.photoUrl}
-                      onClick={() => adminUpdateLog(editUserId, selectedDate, prev => toggleTask(prev, item.id, config))}
-                      label={item.title}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-3 px-4 py-3 border-t border-white/[0.05]">
-              <Stethoscope className="w-4 h-4 text-sky-400 shrink-0" />
-              <span className="flex-1 text-sm text-zinc-200">Medical exemption</span>
-              <Switch
-                tone="blue"
-                label="Medical exemption"
-                checked={targetLog.sickness.isExempt}
-                onChange={next =>
-                  adminUpdateLog(editUserId, selectedDate, prev => ({
-                    ...prev,
-                    sickness: {
-                      ...prev.sickness,
-                      isSick: next,
-                      isExempt: next,
-                      hasMedicalProof: next ? true : prev.sickness.hasMedicalProof,
-                      status: next ? 'approved' : 'none',
-                      reviewedBy: 'Admin',
-                      reviewedAt: new Date().toISOString(),
-                    },
-                  }))
-                }
-              />
-            </div>
-          </Card>
-        </div>
+        <AdminDayEditor
+          challengers={challengers}
+          userId={selectedUserId}
+          date={selectedDate}
+          onChangeUser={setSelectedUserId}
+          onChangeDate={setSelectedDate}
+        />
       )}
 
       {/* RULES & DATES */}
@@ -648,8 +585,8 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
         </div>
       )}
 
-      {/* STICKY SAVE BAR FOR RULES & HABITS */}
-      {(tab === 'rules' || tab === 'habits') && (
+      {/* STICKY SAVE BAR FOR RULES */}
+      {tab === 'rules' && (
         <div className="space-y-3">
           {saveMsg && (
             <Notice tone={saveMsg.ok ? 'emerald' : 'amber'} icon={saveMsg.ok ? CircleCheck : ShieldAlert} title={saveMsg.text} />
@@ -862,6 +799,12 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
             />
           </div>
 
+          {editingHabit?.id && editingHabit.category !== 'custom' && !editingHabit.id.startsWith('custom_') ? (
+            <p className="text-[12px] text-zinc-500 rounded-xl bg-ink-850 border border-white/[0.05] px-3 py-2.5">
+              Targets for core habits (pages, steps, minutes…) are set in Rules &amp; dates.
+            </p>
+          ) : (
+          <>
           <div>
             <label className="field-label">Tracking Type</label>
             <div className="grid grid-cols-2 gap-2">
@@ -912,6 +855,8 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({ onNavigateTa
                 />
               </div>
             </div>
+          )}
+          </>
           )}
 
           <div>

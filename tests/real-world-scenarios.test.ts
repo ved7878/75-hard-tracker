@@ -24,6 +24,7 @@ import {
   normalizeConfig,
   getChallengePhase,
   applyLateTravelLock,
+  normalizeLog,
 } from '../src/services/rulesEngine.ts';
 
 // Helper: produce a fully completed day's tasks
@@ -744,5 +745,49 @@ describe('Dynamic Habit Management (Custom Habits & Disabling Habits)', () => {
     assert.strictEqual(val.completedCount, 11);
     assert.strictEqual(val.totalCount, 12);
     assert.strictEqual(val.failedNames.length, 0); // optional habit does not appear in failedNames
+  });
+});
+
+describe('Custom habit data survives saving and reloading', () => {
+  const cfg = normalizeConfig({
+    ...DEFAULT_CONFIG,
+    habits: [
+      ...(DEFAULT_CONFIG.habits || []),
+      { id: 'custom_cold', name: 'Cold Shower', description: '', enabled: true, required: true, category: 'custom', targetType: 'checkbox' },
+      { id: 'custom_pushups', name: 'Push-ups', description: '', enabled: true, required: true, category: 'custom', targetType: 'number', targetValue: 50, targetUnit: 'reps' },
+    ],
+  });
+
+  it('keeps tasks.custom when a log is normalized (cloud reload / merge)', () => {
+    const log = createDefaultLog('2026-11-14', cfg, 'user_1');
+    log.tasks.custom = {
+      custom_cold: { completed: true },
+      custom_pushups: { completed: true, value: 60, notes: 'felt strong' },
+    };
+    // What the database / localStorage hands back: plain JSON
+    const reloaded = normalizeLog(JSON.parse(JSON.stringify(log)), cfg);
+    assert.deepStrictEqual(reloaded.tasks.custom?.custom_cold, { completed: true });
+    assert.strictEqual(reloaded.tasks.custom?.custom_pushups?.value, 60);
+    assert.strictEqual(reloaded.tasks.custom?.custom_pushups?.notes, 'felt strong');
+    const v = validateDayTasks(reloaded, cfg);
+    assert.strictEqual(v.items.find(i => i.id === 'custom_cold')?.isCompleted, true);
+    assert.strictEqual(v.items.find(i => i.id === 'custom_pushups')?.isCompleted, true);
+  });
+
+  it('folds old top-level custom habit keys into tasks.custom', () => {
+    const log: any = createDefaultLog('2026-11-14', cfg, 'user_1');
+    delete log.tasks.custom;
+    log.tasks.custom_cold = { completed: true };
+    const reloaded = normalizeLog(log, cfg);
+    assert.strictEqual(reloaded.tasks.custom?.custom_cold?.completed, true);
+    assert.strictEqual(validateDayTasks(reloaded, cfg).items.find(i => i.id === 'custom_cold')?.isCompleted, true);
+  });
+
+  it('a day with every core habit done is still incomplete until the custom habit is ticked', () => {
+    let log = completeAllTasks(createDefaultLog('2026-11-14', cfg, 'user_1'), cfg);
+    log.tasks.custom = { custom_cold: { completed: true } };
+    assert.strictEqual(validateDayTasks(normalizeLog(log, cfg), cfg).allCompleted, false); // push-ups missing
+    log.tasks.custom = { ...log.tasks.custom, custom_pushups: { completed: true, value: 50 } };
+    assert.strictEqual(validateDayTasks(normalizeLog(JSON.parse(JSON.stringify(log)), cfg), cfg).allCompleted, true);
   });
 });

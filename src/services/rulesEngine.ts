@@ -305,6 +305,46 @@ export function createDefaultTasks(config: ChallengeConfig = DEFAULT_CONFIG): Ta
 }
 
 /**
+ * Fills in any task / travel / sickness / sport fields missing from a stored log, so one
+ * malformed or older row can't crash the dashboard for the whole squad.
+ *
+ * Custom (admin-added) habits live in `tasks.custom` and MUST survive this – dropping them
+ * here used to wipe every tick on a new habit the next time the app loaded from the cloud.
+ * Very old builds stored custom habits as top-level task keys; those are folded into `custom`.
+ */
+export function normalizeLog(input: DailyLog, config: ChallengeConfig = DEFAULT_CONFIG): DailyLog {
+  const log: any = input; // rows from the DB may be missing fields the type says exist
+  const defaults = createDefaultTasks(config);
+  const rawTasks: any = log.tasks || {};
+  const tasks: any = {};
+  (Object.keys(defaults) as Array<keyof typeof defaults>).forEach(k => {
+    tasks[k] = { ...defaults[k], ...(rawTasks[k] || {}) };
+  });
+
+  const custom: Record<string, { completed: boolean; value?: number | string; notes?: string }> = {};
+  Object.entries(rawTasks.custom || {}).forEach(([id, v]: [string, any]) => {
+    if (v && typeof v === 'object') custom[id] = { ...v, completed: Boolean(v.completed) };
+  });
+  Object.keys(rawTasks).forEach(k => {
+    if (k in defaults || k === 'custom' || custom[k]) return;
+    const v = rawTasks[k];
+    if (v && typeof v === 'object' && 'completed' in v) custom[k] = { ...v, completed: Boolean(v.completed) };
+  });
+  tasks.custom = custom;
+
+  return {
+    ...log,
+    travel: { isTravelling: false, hours: 0, gymAvailable: true, ...(log.travel || {}) },
+    sickness: { isSick: false, hasMedicalProof: false, isExempt: false, status: 'none', ...(log.sickness || {}) },
+    tasks,
+    sport: { participated: false, sportName: '', durationMinutes: 0, improvementNotes: '', ...(log.sport || {}) },
+    journalNotes: log.journalNotes || '',
+    failedTasks: log.failedTasks || [],
+    isLocked: Boolean(log.isLocked),
+  };
+}
+
+/**
  * Create default log for a specific date and user
  */
 export function createDefaultLog(
@@ -342,7 +382,7 @@ export function createDefaultLog(
       isExempt: false,
       status: 'none',
     },
-    tasks: createDefaultTasks(config),
+    tasks: { ...createDefaultTasks(config), custom: {} },
     sport: {
       participated: false,
       sportName: '',

@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserProfile, ChallengeConfig, DailyLog } from '../types';
-import { normalizeConfig, createDefaultTasks } from './rulesEngine';
+import { normalizeConfig, normalizeLog } from './rulesEngine';
 import { storage, DEFAULT_USERS } from './storage';
 
 // Local storage keys for hybrid offline/online fallback
@@ -9,30 +9,6 @@ const SB_KEY_KEY = '75hard_supabase_key';
 
 const timeOf = (iso?: string) =>
   iso ? Date.parse(iso.replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1').replace(/([+-]\d{2})$/, '$1:00')) || 0 : 0;
-
-/**
- * Fills in any task / travel / sickness / sport fields missing from a stored log,
- * so one malformed or older row can't crash the dashboard for the whole squad.
- */
-function normalizeLog(input: DailyLog, config: ChallengeConfig): DailyLog {
-  const log: any = input; // rows from the DB may be missing fields the type says exist
-  const defaults = createDefaultTasks(config);
-  const rawTasks: any = log.tasks || {};
-  const tasks: any = {};
-  (Object.keys(defaults) as Array<keyof typeof defaults>).forEach(k => {
-    tasks[k] = { ...defaults[k], ...(rawTasks[k] || {}) };
-  });
-  return {
-    ...log,
-    travel: { isTravelling: false, hours: 0, gymAvailable: true, ...(log.travel || {}) },
-    sickness: { isSick: false, hasMedicalProof: false, isExempt: false, status: 'none', ...(log.sickness || {}) },
-    tasks,
-    sport: { participated: false, sportName: '', durationMinutes: 0, improvementNotes: '', ...(log.sport || {}) },
-    journalNotes: log.journalNotes || '',
-    failedTasks: log.failedTasks || [],
-    isLocked: Boolean(log.isLocked),
-  };
-}
 
 const SESSION_TOKEN_KEY = '75hard_session_token';
 const SESSION_USER_KEY = '75hard_session_user';
@@ -562,23 +538,38 @@ class SupabaseService {
     return storage.getAllUsersLogs();
   }
 
-  private pendingCloudSaves = new Map<string, { timer: ReturnType<typeof setTimeout>; userId: string; log: DailyLog }>();
+  private pendingCloudSaves = new Map<
+    string,
+    { timer: ReturnType<typeof setTimeout>; userId: string; log: DailyLog; resolvers: Array<(ok: boolean) => void> }
+  >();
+
+  /** One cloud write at a time per day, so quick taps can't land out of order. */
+  private writeChains = new Map<string, Promise<boolean>>();
+
+  /** True when log edits are being written to Supabase (false = saved on this device only). */
+  public canSyncToCloud(): boolean {
+    return this.canSyncLogs();
+  }
 
   /**
    * Saves locally right away and batches the cloud write, so typing in a text field
-   * doesn't fire one network request per keystroke.
+   * doesn't fire one network request per keystroke. Resolves once the cloud write for
+   * this day has finished (true = saved).
    */
-  public saveLogDebounced(userId: string, log: DailyLog, delayMs = 700): void {
+  public saveLogDebounced(userId: string, log: DailyLog, delayMs = 700): Promise<boolean> {
     storage.saveUserLog(userId, log);
-    if (!this.canSyncLogs()) return;
+    if (!this.canSyncLogs()) return Promise.resolve(true);
     const key = `${userId}_${log.date}`;
     const existing = this.pendingCloudSaves.get(key);
     if (existing) clearTimeout(existing.timer);
+    const resolvers = existing?.resolvers || [];
+    const done = new Promise<boolean>(resolve => resolvers.push(resolve));
     const timer = setTimeout(() => {
       this.pendingCloudSaves.delete(key);
-      this.saveLog(userId, log);
+      this.saveLog(userId, log).then(ok => resolvers.forEach(r => r(ok)));
     }, delayMs);
-    this.pendingCloudSaves.set(key, { timer, userId, log });
+    this.pendingCloudSaves.set(key, { timer, userId, log, resolvers });
+    return done;
   }
 
   /** Drop a queued cloud write for one day (used when a newer full save is about to happen). */
@@ -588,23 +579,36 @@ class SupabaseService {
     if (pending) {
       clearTimeout(pending.timer);
       this.pendingCloudSaves.delete(key);
+      pending.resolvers.forEach(r => r(true)); // superseded by the newer save
     }
   }
 
   /** Immediately push any queued cloud writes (e.g. when the app is backgrounded). */
   public flushPendingSaves(): void {
-    this.pendingCloudSaves.forEach(({ timer, userId, log }, key) => {
+    this.pendingCloudSaves.forEach(({ timer, userId, log, resolvers }, key) => {
       clearTimeout(timer);
       this.pendingCloudSaves.delete(key);
-      this.saveLog(userId, log);
+      this.saveLog(userId, log).then(ok => resolvers.forEach(r => r(ok)));
     });
   }
 
-  public async saveLog(userId: string, log: DailyLog): Promise<boolean> {
+  public saveLog(userId: string, log: DailyLog): Promise<boolean> {
     // 1. Save to local storage first for zero latency
     storage.saveUserLog(userId, log);
+    if (!(this.client && this.canSyncLogs())) return Promise.resolve(true);
 
-    // 2. Sync to Supabase in background (needs a signed-in session)
+    // 2. Queue the cloud write behind any earlier one for the same day
+    const key = `${userId}_${log.date}`;
+    const prev = this.writeChains.get(key) || Promise.resolve(true);
+    const next = prev.catch(() => false).then(() => this.writeLogToCloud(userId, log));
+    this.writeChains.set(key, next);
+    next.finally(() => {
+      if (this.writeChains.get(key) === next) this.writeChains.delete(key);
+    });
+    return next;
+  }
+
+  private async writeLogToCloud(userId: string, log: DailyLog): Promise<boolean> {
     if (this.client && this.canSyncLogs()) {
       try {
         const id = `${userId}_${log.date}`;

@@ -9,6 +9,7 @@ import {
   PlaneTakeoff,
   BellRing,
   CalendarRange,
+  Vibrate,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
@@ -19,6 +20,7 @@ import {
   notificationPermission,
 } from '../../services/notifications';
 import { sound } from '../../services/audio';
+import { haptics } from '../../services/haptics';
 import { supabaseService } from '../../services/supabaseService';
 import { formatPrettyDate, formatTime12 } from '../../services/rulesEngine';
 import { Card, ListGroup, ListRow, SectionHeader, Sheet, Switch, ScreenTitle, Notice } from '../ui';
@@ -30,6 +32,8 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab }) => {
   const { config, currentUser, isAdmin, logout, pendingExceptions, squadMembers } = useChallenge();
   const [soundEnabled, setSoundEnabled] = useState(sound.getSoundEnabled());
+  const [hapticsEnabled, setHapticsEnabled] = useState(haptics.getEnabled());
+  const hapticsSupported = haptics.isSupported();
   const [reminder, setReminder] = useState(() => getReminderPrefs({ enabled: config.reminderEnabled, time: config.reminderTime }));
   const [pwOpen, setPwOpen] = useState(false);
   const [pw, setPw] = useState('');
@@ -53,11 +57,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
 
   const testNotification = async () => {
     const granted = await requestNotificationPermission();
-    if (granted) {
-      sendLocalNotification('75 HARD reminder', { body: 'This is how your daily reminder will look.' });
-    } else {
-      alert('Notifications are blocked or not supported in this browser.');
+    if (!granted) {
+      alert('Notifications are blocked. Allow them for this app in your phone / browser settings, then try again.');
+      return;
     }
+    const shown = await sendLocalNotification('75 HARD reminder', {
+      body: 'This is how your daily reminder will look.',
+      tag: '75hard-test',
+    });
+    if (!shown) alert('Could not show a notification on this device. Try reopening the app and test again.');
   };
 
   const savePassword = async () => {
@@ -185,6 +193,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateTab })
                   setSoundEnabled(v);
                   sound.setSoundEnabled(v);
                   if (v) sound.playTaskCheck();
+                }}
+              />
+            }
+          />
+          <ListRow
+            icon={Vibrate}
+            iconTone="violet"
+            title="Haptics"
+            subtitle={hapticsSupported ? 'Vibrate when you tick a habit' : 'Not supported on this device'}
+            right={
+              <Switch
+                checked={hapticsEnabled && hapticsSupported}
+                disabled={!hapticsSupported}
+                tone="emerald"
+                label="Haptics"
+                onChange={v => {
+                  setHapticsEnabled(v);
+                  haptics.setEnabled(v);
+                  if (v) haptics.play('success');
                 }}
               />
             }

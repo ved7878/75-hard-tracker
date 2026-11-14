@@ -44,7 +44,7 @@ export const QuickTasksList: React.FC<QuickTasksListProps> = ({ onOpenDetails })
       />
       <div className="card overflow-hidden divide-y divide-white/[0.05]">
         {items.map(item => {
-          const Icon = getTaskIcon(item.id);
+          const Icon = getTaskIcon(item.id, config.habits?.find(h => h.id === item.id)?.icon);
           const done = item.isCompleted;
           return (
             <div

@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlaneTakeoff, Stethoscope, CalendarClock, Flame, Wallet, ShieldCheck, ChevronRight, Sparkles, Trophy } from 'lucide-react';
+import { PlaneTakeoff, Stethoscope, CalendarClock, Flame, Wallet, ShieldCheck, ChevronRight, Sparkles, Trophy, Pencil } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import { DayProgressRing } from './DayProgressRing';
 import { QuickTasksList } from './QuickTasksList';
@@ -18,6 +18,8 @@ import { Card, Notice, SectionHeader, ProgressBar } from '../ui';
 interface DashboardScreenProps {
   onNavigateTab: (tab: string) => void;
   onOpenTaskDetails: (taskId?: string) => void;
+  /** Referee: open a challenger's day in Admin → Edit day */
+  onEditDay?: (userId: string, date: string) => void;
 }
 
 const greeting = () => {
@@ -27,7 +29,7 @@ const greeting = () => {
   return 'Good evening';
 };
 
-export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab, onOpenTaskDetails }) => {
+export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab, onOpenTaskDetails, onEditDay }) => {
   const {
     currentLog,
     config,
@@ -73,7 +75,22 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateTab,
             </button>
           }
         >
-          {isAdmin ? 'Admin override – you can edit this day.' : 'Only today can be edited.'}
+          {isAdmin ? 'Read-only preview.' : 'Only today can be edited.'}
+        </Notice>
+      )}
+
+      {isAdmin && !isRefereeSelf && currentUser && onEditDay && (
+        <Notice
+          tone="violet"
+          icon={ShieldCheck}
+          title={`Previewing ${currentUser.name}`}
+          action={
+            <button onClick={() => onEditDay(currentUser.id, currentDate)} className="btn-primary btn-sm">
+              <Pencil className="w-3.5 h-3.5" /> Edit day
+            </button>
+          }
+        >
+          Referee edits happen in Admin → Edit day.
         </Notice>
       )}
 

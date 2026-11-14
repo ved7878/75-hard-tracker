@@ -10,16 +10,20 @@ interface DayDetailModalProps {
   config: ChallengeConfig;
   onClose: () => void;
   onJumpToDate: (date: string) => void;
+  /** Referee only: open this day in Admin → Edit day */
+  onEditDay?: (date: string) => void;
 }
 
-export const DayDetailModal: React.FC<DayDetailModalProps> = ({ log, config, onClose, onJumpToDate }) => {
+export const DayDetailModal: React.FC<DayDetailModalProps> = ({ log, config, onClose, onJumpToDate, onEditDay }) => {
   const { isAdmin } = useChallenge();
   if (!log) return null;
 
   const { items, allCompleted, completedCount, totalCount } = validateDayTasks(log, config);
   const dayNumber = getDayNumber(log.date, config.startDate);
   const todayDate = isToday(log.date);
-  const canEdit = todayDate || isAdmin;
+  // Challengers edit today in the checklist; the referee edits any day in Admin → Edit day
+  const refereeEdit = isAdmin && Boolean(onEditDay);
+  const canEdit = isAdmin ? refereeEdit : todayDate;
 
   return (
     <Sheet
@@ -45,11 +49,12 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({ log, config, onC
           className={canEdit ? 'btn-primary w-full' : 'btn-secondary w-full'}
           onClick={() => {
             onClose();
-            onJumpToDate(log.date);
+            if (refereeEdit) onEditDay!(log.date);
+            else onJumpToDate(log.date);
           }}
         >
           {canEdit ? <Pencil className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          {todayDate ? 'Open today' : canEdit ? 'Edit this day' : 'View in checklist'}
+          {refereeEdit ? 'Edit in admin panel' : todayDate ? 'Open today' : 'View in checklist'}
         </button>
       }
     >

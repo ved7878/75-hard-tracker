@@ -28,7 +28,7 @@ import {
   applyLateTravelLock,
 } from '../services/rulesEngine';
 import { supabaseService } from '../services/supabaseService';
-import { sound } from '../services/audio';
+import { feedback } from '../services/feedback';
 import { setupDailyReminder, getReminderPrefs } from '../services/notifications';
 
 interface ChallengeContextType {
@@ -60,7 +60,17 @@ interface ChallengeContextType {
   pendingExceptions: PendingExceptionItem[];
   approveException: (userId: string, dateStr: string, comment?: string) => Promise<void>;
   rejectException: (userId: string, dateStr: string, comment?: string) => Promise<void>;
-  adminUpdateLog: (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => Promise<void>;
+  /**
+   * The ONLY way the referee changes a challenger's day (Admin → Edit day, approvals).
+   * Resolves true once the change is saved (to the cloud when connected).
+   * `debounce` batches rapid edits such as typing into one cloud write.
+   */
+  adminUpdateLog: (
+    userId: string,
+    dateStr: string,
+    updater: (prev: DailyLog) => DailyLog,
+    opts?: { debounce?: boolean }
+  ) => Promise<boolean>;
   // DB settings on backend / Supabase
   dbSettings: { supabaseUrl: string; hasKey: boolean; isConnected: boolean } | null;
   updateDbSettings: (settings: { supabaseUrl: string; supabaseAnonKey?: string }) => Promise<{ success: boolean; message: string }>;
@@ -137,7 +147,10 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const isTodayDate = currentDate === todayStr;
   const isAdmin = currentUser?.role === 'admin';
-  const isEditable = isDateEditable(currentDate, config, isAdmin || adminOverrideMode);
+  // The referee never edits through the challenger screens (Today / Checklist / Travel) –
+  // those are read-only previews for them. All referee edits go through adminUpdateLog
+  // (Admin → Edit day), so there is exactly one save path for referee changes.
+  const isEditable = !isAdmin && isDateEditable(currentDate, config, false);
 
   // Day numbers stored inside logs were computed with whatever start date was active when the
   // log was written. Always recompute them from the CURRENT start date so changing the start
@@ -390,7 +403,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Update current date's log
   const updateCurrentLog = useCallback(
     async (updater: (prev: DailyLog) => DailyLog): Promise<boolean> => {
-      if (!currentUser) return false;
+      if (!currentUser || isAdmin) return false;
 
       // Restrict challengers to editing today only!
       if (!isEditable) {
@@ -438,12 +451,12 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Feedback only when progress actually changes (not on every keystroke)
       if (allCompleted && !before.allCompleted) {
         if (!updated.completedAt) updated.completedAt = new Date().toISOString();
-        sound.playDayComplete();
+        feedback.dayComplete();
         try {
           confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 }, colors: ['#f43f5e', '#10b981', '#f59e0b', '#ffffff'] });
         } catch (e) {}
       } else if (completedCount > before.completedCount) {
-        sound.playTaskCheck();
+        feedback.tick();
       }
       updated.updatedAt = new Date().toISOString();
 
@@ -474,7 +487,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const updateTomorrowTravel = useCallback(
     async (patch: Partial<TravelInfo>): Promise<boolean> => {
-      if (!currentUser || currentUser.id === 'admin') return false;
+      if (!currentUser || currentUser.id === 'admin' || isAdmin) return false;
       const date = addDays(formatDate(new Date()), 1);
       const existing = rawLogsRef.current[currentUser.id]?.[date] || createDefaultLog(date, config, currentUser.id);
       const travel: TravelInfo = { ...existing.travel, ...patch, plannedAt: new Date().toISOString() };
@@ -504,7 +517,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       supabaseService.saveLogDebounced(currentUser.id, updated);
       return true;
     },
-    [currentUser, config]
+    [currentUser, config, isAdmin]
   );
 
   // Admin: Update System Config
@@ -553,20 +566,30 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // Admin: Time-Machine Override (Modify any past or future day)
-  const adminUpdateLog = async (userId: string, dateStr: string, updater: (prev: DailyLog) => DailyLog) => {
-    // A debounced save still queued for this day (e.g. notes typed a moment ago) would
-    // fire after this one and undo the admin's change – drop it, we save the merged log now.
-    supabaseService.cancelPendingSave(userId, dateStr);
+  const adminUpdateLog = async (
+    userId: string,
+    dateStr: string,
+    updater: (prev: DailyLog) => DailyLog,
+    opts: { debounce?: boolean } = {}
+  ): Promise<boolean> => {
+    if (!isAdmin) return false;
+    // Always build on the LATEST copy of the day so quick successive edits stack up
     const existing = rawLogsRef.current[userId]?.[dateStr] || createDefaultLog(dateStr, config, userId);
+    const before = validateDayTasks(existing, config);
     const updated = updater(existing);
 
     updated.userId = userId;
     updated.id = `${userId}_${dateStr}`;
+    updated.date = dateStr;
     updated.dayNumber = getDayNumber(dateStr, config.startDate);
     updated.status = computeDayStatus(updated, config);
-    const { failedNames } = validateDayTasks(updated, config);
-    updated.failedTasks = failedNames;
+    const { failedNames, allCompleted, completedCount } = validateDayTasks(updated, config);
+    updated.failedTasks = allCompleted ? [] : failedNames;
+    if (allCompleted && !updated.completedAt) updated.completedAt = new Date().toISOString();
+    if (!allCompleted) updated.completedAt = undefined;
     updated.updatedAt = new Date().toISOString();
+    if (allCompleted && !before.allCompleted) feedback.dayComplete();
+    else if (completedCount > before.completedCount) feedback.tick();
 
     setLogsNow(prev => ({
       ...prev,
@@ -576,7 +599,10 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       },
     }));
 
-    await supabaseService.saveLog(userId, updated);
+    if (opts.debounce) return supabaseService.saveLogDebounced(userId, updated);
+    // A debounced save still queued for this day would fire after this one and undo it
+    supabaseService.cancelPendingSave(userId, dateStr);
+    return supabaseService.saveLog(userId, updated);
   };
 
   // Admin: Approve Exception
@@ -633,7 +659,7 @@ export const ChallengeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const celebrateCompletion = useCallback(() => {
     try {
-      sound.playDayComplete();
+      feedback.dayComplete();
       confetti({
         particleCount: 100,
         spread: 70,

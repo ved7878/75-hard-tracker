@@ -14,6 +14,7 @@ import {
   Dumbbell,
   AlarmClock,
   Footprints,
+  Pencil,
 } from 'lucide-react';
 import { useChallenge } from '../../context/ChallengeContext';
 import {
@@ -128,7 +129,10 @@ const GymAccessCard: React.FC<{
   </Card>
 );
 
-export const TravelSicknessScreen: React.FC = () => {
+export const TravelSicknessScreen: React.FC<{
+  /** Referee: open this person's day in Admin → Edit day (the only place the referee edits) */
+  onEditDay?: (userId: string, date: string) => void;
+}> = ({ onEditDay }) => {
   const {
     currentLog,
     updateCurrentLog,
@@ -139,8 +143,6 @@ export const TravelSicknessScreen: React.FC = () => {
     setCurrentDate,
     currentUser,
     isAdmin,
-    approveException,
-    rejectException,
     tomorrowLog,
     updateTomorrowTravel,
   } = useChallenge();
@@ -154,7 +156,7 @@ export const TravelSicknessScreen: React.FC = () => {
   const tomorrowWake = getEffectiveWakeUpTarget(tomorrow.hours, tomorrow.isTravelling, config);
   const tomorrowDeadline = getWakeUpDeadline(tomorrowLog, config);
   // Planned from today's view, for a challenger (not the referee's own account)
-  const canPlanTomorrow = isToday && Boolean(currentUser) && currentUser?.id !== 'admin';
+  const canPlanTomorrow = isToday && !isAdmin && Boolean(currentUser) && currentUser?.id !== 'admin';
 
   const updateTravel = (patch: Partial<TravelInfo>) =>
     updateCurrentLog(prev => ({ ...prev, travel: { ...prev.travel, ...patch } }));
@@ -181,9 +183,9 @@ export const TravelSicknessScreen: React.FC = () => {
           hasMedicalProof: true,
           medicalProofUrl: finalUrl,
           medicalProofName: file.name,
-          // Referee uploads are approved straight away; challenger uploads go to the queue
-          isExempt: isAdmin,
-          status: isAdmin ? 'approved' : 'pending',
+          // Goes to the referee's queue (Admin → Requests)
+          isExempt: false,
+          status: 'pending',
         },
       }));
     } catch (err) {
@@ -230,7 +232,22 @@ export const TravelSicknessScreen: React.FC = () => {
         subtitle={`${isToday ? 'Today' : formatPrettyDate(currentDate)}${isAdmin ? ` · ${currentUser?.name}` : ''}`}
       />
 
-      {!isEditable && (
+      {isAdmin ? (
+        <Notice
+          tone="violet"
+          icon={ShieldCheck}
+          title="Referee preview"
+          action={
+            onEditDay && currentUser && currentUser.id !== 'admin' ? (
+              <button onClick={() => onEditDay(currentUser.id, currentDate)} className="btn-primary btn-sm">
+                <Pencil className="w-3.5 h-3.5" /> Edit
+              </button>
+            ) : undefined
+          }
+        >
+          Read-only. Change travel, gym access or sick-day exemptions in Admin → Edit day; approve requests in Admin → Requests.
+        </Notice>
+      ) : !isEditable && (
         <Notice
           tone="amber"
           icon={Lock}
@@ -442,16 +459,6 @@ export const TravelSicknessScreen: React.FC = () => {
 
             {statusNotice()}
 
-            {isAdmin && currentUser && currentUser.id !== 'admin' && (
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button onClick={() => approveException(currentUser.id, currentDate)} className="btn bg-emerald-600 text-white">
-                  Approve
-                </button>
-                <button onClick={() => rejectException(currentUser.id, currentDate)} className="btn-secondary text-rose-300">
-                  Reject
-                </button>
-              </div>
-            )}
           </div>
         )}
       </Card>

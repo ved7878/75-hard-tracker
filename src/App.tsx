@@ -27,6 +27,8 @@ const MainAppContent: React.FC = () => {
   const [activeTab, setActiveTabState] = useState<string>('dashboard');
   const [focusTaskId, setFocusTaskId] = useState<string | undefined>(undefined);
   const [returnTab, setReturnTab] = useState<string>('settings');
+  // Referee: which challenger/day Admin → Edit day should open (nonce re-triggers the same day)
+  const [adminDayTarget, setAdminDayTarget] = useState<{ userId: string; date: string; nonce: number } | undefined>();
 
   // Reset to Today on a new login. Admin previewing different challengers keeps the same
   // session key, so switching people doesn't kick the admin out of the current screen.
@@ -58,6 +60,13 @@ const MainAppContent: React.FC = () => {
     if (!taskId) window.scrollTo({ top: 0 });
   };
 
+  // The single place the referee edits a challenger's day
+  const openDayEditor = (userId: string, date: string) => {
+    setAdminDayTarget({ userId, date, nonce: Date.now() });
+    setActiveTab('admin');
+  };
+  const editDay = isAdmin ? openDayEditor : undefined;
+
   const parent = SUB_SCREENS.includes(activeTab) ? returnTab : undefined;
 
   return (
@@ -75,13 +84,13 @@ const MainAppContent: React.FC = () => {
           </button>
         )}
 
-        {activeTab === 'dashboard' && <DashboardScreen onNavigateTab={setActiveTab} onOpenTaskDetails={openTask} />}
-        {activeTab === 'tracker' && <DailyTrackerScreen focusTaskId={focusTaskId} onNavigateTab={setActiveTab} />}
-        {activeTab === 'calendar' && <CalendarScreen onNavigateToDate={() => setActiveTab('tracker')} />}
-        {activeTab === 'travel' && <TravelSicknessScreen />}
+        {activeTab === 'dashboard' && <DashboardScreen onNavigateTab={setActiveTab} onOpenTaskDetails={openTask} onEditDay={editDay} />}
+        {activeTab === 'tracker' && <DailyTrackerScreen focusTaskId={focusTaskId} onNavigateTab={setActiveTab} onEditDay={editDay} />}
+        {activeTab === 'calendar' && <CalendarScreen onNavigateToDate={() => setActiveTab('tracker')} onEditDay={editDay} />}
+        {activeTab === 'travel' && <TravelSicknessScreen onEditDay={editDay} />}
         {activeTab === 'analytics' && <AnalyticsScreen />}
         {activeTab === 'settings' && <SettingsScreen onNavigateTab={setActiveTab} />}
-        {activeTab === 'admin' && isAdmin && <AdminPanelScreen onNavigateTab={setActiveTab} />}
+        {activeTab === 'admin' && isAdmin && <AdminPanelScreen onNavigateTab={setActiveTab} dayTarget={adminDayTarget} />}
       </main>
 
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />

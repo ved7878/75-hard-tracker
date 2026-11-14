@@ -15,6 +15,8 @@ import { ScreenTitle, Card, ProgressBar } from '../ui';
 
 interface CalendarScreenProps {
   onNavigateToDate: (date: string) => void;
+  /** Referee: open a challenger's day in Admin → Edit day */
+  onEditDay?: (userId: string, date: string) => void;
 }
 
 type CellState = 'done' | 'exempt' | 'missed' | 'today' | 'upcoming';
@@ -35,7 +37,7 @@ const legend: Array<[string, string]> = [
   ['bg-white/[0.08]', 'Upcoming'],
 ];
 
-export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate }) => {
+export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate, onEditDay }) => {
   const { logs, config, setCurrentDate, currentUser } = useChallenge();
   const [selected, setSelected] = useState<DailyLog | null>(null);
   const todayStr = formatDate(new Date());
@@ -155,6 +157,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ onNavigateToDate
           setCurrentDate(date);
           onNavigateToDate(date);
         }}
+        onEditDay={onEditDay && currentUser && currentUser.id !== 'admin' ? date => onEditDay(currentUser.id, date) : undefined}
       />
     </div>
   );
